@@ -86,7 +86,7 @@ beijing-geo-map/
 
 | 服务 | 镜像 | 作用 | 对外端口 |
 |---|---|---|---|
-| `db` | `postgis/postgis:16-3.4` | 数据库，数据存放在命名卷 `pgdata` 中 | `${DB_PORT:-5432}`，方便本地调试 |
+| `db` | `postgis/postgis:16-3.4` | 数据库，数据存放在命名卷 `pgdata` 中 | `127.0.0.1:${DB_PORT:-5432}`，只绑定本机，方便本地调试 |
 | `seed` | 与 backend 共用一个镜像 | 执行 `importer`，完成后退出；`./data/raw` 以只读方式挂载到 `/data` | 无 |
 | `backend` | 本仓库 `backend/Dockerfile` | 执行 `server` | 不对外暴露，只在容器网络内访问 |
 | `frontend` | 本仓库 `frontend/Dockerfile` | nginx 托管前端并反向代理 `/api` | `${FRONTEND_PORT:-8080}` |
@@ -474,7 +474,7 @@ Zustand store 中保存的状态：
 
 ## 8. CI（GitHub Actions）
 
-推送到任意分支或创建 PR 时触发。三个任务并行执行：
+推送到 `main` 分支，或创建、更新 PR 时触发。只推送功能分支而不开 PR 时不会运行 CI，这样同一个提交不会跑两遍。三个任务并行执行：
 
 | 任务 | 步骤 |
 |---|---|
