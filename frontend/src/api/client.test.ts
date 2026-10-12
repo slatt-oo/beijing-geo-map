@@ -33,9 +33,15 @@ describe('apiGet', () => {
   it('requests the built URL and returns the parsed body', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(200, { data: { status: 'ok', db: 'ok' } }))
     vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
 
-    await expect(apiGet('/health', { verbose: 1 })).resolves.toEqual({ data: { status: 'ok', db: 'ok' } })
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/health?verbose=1', expect.anything())
+    await expect(apiGet('/health', { verbose: 1 }, controller.signal)).resolves.toEqual({
+      data: { status: 'ok', db: 'ok' },
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/health?verbose=1',
+      expect.objectContaining({ signal: controller.signal }),
+    )
   })
 
   it('throws ApiError carrying the server error code and message', async () => {
@@ -67,14 +73,41 @@ describe('apiGet', () => {
     await expect(apiGet('/health')).rejects.toMatchObject({ status: 0, code: 'NETWORK' })
   })
 
-  it('rethrows aborts unchanged so callers can ignore them', async () => {
+  function signalAwareFetch() {
+    return vi.fn<typeof fetch>(async (_input, init) => {
+      init?.signal?.throwIfAborted()
+      return jsonResponse(200, { data: null })
+    })
+  }
+
+  it('rethrows a plain abort unchanged', async () => {
+    vi.stubGlobal('fetch', signalAwareFetch())
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(apiGet('/health', undefined, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('rethrows an abort with a custom reason unchanged', async () => {
+    vi.stubGlobal('fetch', signalAwareFetch())
+    const controller = new AbortController()
+    const reason = new Error('navigated away')
+    controller.abort(reason)
+
+    await expect(apiGet('/health', undefined, controller.signal)).rejects.toBe(reason)
+  })
+
+  it('rethrows an abort that happens while reading an error body', async () => {
+    const controller = new AbortController()
+    const reason = new Error('navigated away')
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => {
-        throw new DOMException('The operation was aborted.', 'AbortError')
+      vi.fn<typeof fetch>(async () => {
+        controller.abort(reason)
+        return jsonResponse(500, { error: { code: 'INTERNAL', message: '服务器内部错误' } })
       }),
     )
 
-    await expect(apiGet('/health')).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(apiGet('/health', undefined, controller.signal)).rejects.toBe(reason)
   })
 })

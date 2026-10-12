@@ -33,10 +33,14 @@ export async function apiGet<T>(path: string, params?: Record<string, QueryValue
   try {
     res = await fetch(buildUrl(path, params), { signal, headers: { Accept: 'application/json' } })
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') throw err
+    if (signal?.aborted) throw err
     throw new ApiError(0, 'NETWORK', '网络错误，请确认后端服务已启动')
   }
-  if (!res.ok) throw await toApiError(res)
+  if (!res.ok) {
+    const apiError = await toApiError(res)
+    signal?.throwIfAborted()
+    throw apiError
+  }
   return (await res.json()) as T
 }
 
