@@ -102,6 +102,9 @@ beijing-geo-map/
 | `DATA_DIR` | seed | `/data` | 数据快照所在目录 |
 | `VITE_TILE_URL` | frontend（构建时） | 高德瓦片地址 | 底图瓦片模板，`{s}` 会展开为 1 到 4 号子域名 |
 | `VITE_TILE_CRS` | frontend（构建时） | `gcj02` | 底图坐标系；设为 `wgs84` 时关闭坐标转换 |
+| `DB_PORT` / `FRONTEND_PORT` | compose | `5432` / `8080` | 映射到宿主机的端口 |
+| `GOPROXY` | backend 镜像构建 | `https://goproxy.cn,direct` | Go 模块代理；CI 中设为 `https://proxy.golang.org,direct` |
+| `NPM_REGISTRY` | frontend 镜像构建 | `https://registry.npmjs.org/` | npm 源；国内可以改为 `https://registry.npmmirror.com/` |
 
 `VITE_*` 变量在构建时就写进前端代码，所以要通过 Docker 的 `build.args` 传入。
 
@@ -117,9 +120,14 @@ make run-frontend    # npm run dev，由 Vite 把 /api 代理到 localhost:8000
 
 其他常用命令：`make up` / `make down` / `make logs` / `make test` / `make test-integration` / `make lint` / `make fetch-osm`。
 
-### 3.4 Go 版本
+### 3.4 版本与依赖源
 
-本机安装的是 Go 1.21。`go.mod` 会声明项目实际需要的更高版本，Go 1.21 及以上会根据 `go.mod` 自动下载对应的工具链（`GOTOOLCHAIN=auto`），所以不需要手动升级。Docker 构建和 CI 直接使用对应版本的官方镜像。
+- **Go 1.26**：`go.mod` 声明 `go 1.26.0`。Gin v1.12 和 pgx v5.11 要求 Go 1.25 以上，gin-contrib/gzip v1.2.8 要求 Go 1.26 以上。本机的 Go 1.21 会根据 `go.mod` 自动下载 1.26 工具链（`GOTOOLCHAIN=auto`），不需要手动升级。Docker 构建使用 `golang:1.26-alpine`，CI 中的 `setup-go` 从 `go.mod` 读取版本。
+- **前端**：React 19、Vite 8、Vitest 5、ESLint 10、Tailwind CSS 4，Node 24。TypeScript 固定为 `~6.0.3`：typescript-eslint 8 只支持到 TypeScript 6.0，暂时不能升级到 7.0。
+- **npm 源**：`frontend/.npmrc` 固定使用 `https://registry.npmjs.org/`，保证 `package-lock.json` 中只有公共源地址，GitHub CI 和其他人 clone 后都能正常安装。
+- **镜像构建时的依赖源**：通过构建参数 `GOPROXY` 和 `NPM_REGISTRY` 配置，默认值见上方环境变量表。
+- **PostGIS 镜像**：`postgis/postgis:16-3.4` 只提供 amd64 版本。compose 中显式声明 `platform: linux/amd64`，在 Apple Silicon 上通过模拟运行，功能不受影响，只是启动稍慢。
+- **数据库健康检查**：`pg_isready` 必须加 `-h 127.0.0.1` 走 TCP。官方镜像初始化阶段的临时实例只监听 unix socket，不加这个参数会在初始化完成之前就被判定为健康。
 
 ## 4. 坐标系方案
 
