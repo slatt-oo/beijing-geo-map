@@ -404,6 +404,36 @@ func TestNearbyFiltersByCategoryAndLimit(t *testing.T) {
 	}
 }
 
+func TestEmptyCategoryIDsMeanNoFilter(t *testing.T) {
+	f := setup(t)
+	repo := repository.NewPOIRepo(f.pool)
+	ctx := context.Background()
+
+	all, _, err := repo.InBBox(ctx, boxA, nil, 100)
+	if err != nil {
+		t.Fatalf("InBBox nil: %v", err)
+	}
+	empty, _, err := repo.InBBox(ctx, boxA, []int16{}, 100)
+	if err != nil {
+		t.Fatalf("InBBox empty: %v", err)
+	}
+	if !slices.Equal(summaryNames(empty), summaryNames(all)) {
+		t.Errorf("InBBox with empty categories = %v, want %v", summaryNames(empty), summaryNames(all))
+	}
+
+	allNear, err := repo.Nearby(ctx, 116.05, 40.05, 1000, nil, 50)
+	if err != nil {
+		t.Fatalf("Nearby nil: %v", err)
+	}
+	emptyNear, err := repo.Nearby(ctx, 116.05, 40.05, 1000, []int16{}, 50)
+	if err != nil {
+		t.Fatalf("Nearby empty: %v", err)
+	}
+	if !slices.Equal(nearbyNames(emptyNear), nearbyNames(allNear)) {
+		t.Errorf("Nearby with empty categories = %v, want %v", nearbyNames(emptyNear), nearbyNames(allNear))
+	}
+}
+
 func TestQueriesCanUseTheirIndexes(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()

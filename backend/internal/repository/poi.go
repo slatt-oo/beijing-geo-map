@@ -30,9 +30,12 @@ WHERE p.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
 ORDER BY p.id
 LIMIT $6`
 
-// InBBox 返回落在 box 内的 POI，按 id 排序。categoryIDs 为 nil 表示不按分类过滤。
+// InBBox 返回落在 box 内的 POI，按 id 排序。categoryIDs 为 nil 或空表示不按分类过滤。
 // 多查 1 条来判断是否截断，比额外执行 count(*) 更省。
 func (r *POIRepo) InBBox(ctx context.Context, box model.BBox, categoryIDs []int16, limit int) ([]model.POISummary, bool, error) {
+	if len(categoryIDs) == 0 {
+		categoryIDs = nil
+	}
 	rows, err := r.db.Query(ctx, poisInBBoxSQL, box.MinLng, box.MinLat, box.MaxLng, box.MaxLat, categoryIDs, limit+1)
 	if err != nil {
 		return nil, false, fmt.Errorf("pois in bbox: %w", err)
@@ -124,9 +127,12 @@ WHERE ST_DWithin(p.geom::geography, o.g, $3)
 ORDER BY distance_m, p.id
 LIMIT $5`
 
-// Nearby 返回距 (lng, lat) radiusM 米以内的 POI，按距离从近到远排序。
+// Nearby 返回距 (lng, lat) radiusM 米以内的 POI，按距离从近到远排序。categoryIDs 为 nil 或空表示不按分类过滤。
 // 过滤条件必须写成 p.geom::geography，与表达式索引 poi_geog_gist 一致，否则用不上索引。
 func (r *POIRepo) Nearby(ctx context.Context, lng, lat, radiusM float64, categoryIDs []int16, limit int) ([]model.NearbyPOI, error) {
+	if len(categoryIDs) == 0 {
+		categoryIDs = nil
+	}
 	rows, err := r.db.Query(ctx, nearbyPOIsSQL, lng, lat, radiusM, categoryIDs, limit)
 	if err != nil {
 		return nil, fmt.Errorf("nearby pois: %w", err)
