@@ -11,7 +11,7 @@
 
 ## 更新快照
 
-- **POI**：运行 `make fetch-osm`（即 `scripts/fetch_osm_pois.sh`）。脚本会带上 User-Agent，失败时间隔 30、60、120 秒重试，只有返回的要素不少于 1000 个时才会覆盖现有文件。
+- **POI**：运行 `make fetch-osm`（即 `scripts/fetch_osm_pois.sh`）。脚本会带上 User-Agent，失败时间隔 30、60、120 秒重试；只有返回的要素不少于 1000 个、并且响应中没有表示查询超时或内存不足的 `remark` 字段时，才会覆盖现有文件。
 - **行政区边界**：
 
   ```bash
@@ -19,3 +19,5 @@
   ```
 
 更新后运行 `make seed` 重新导入。导入是幂等的：已有记录会被更新，快照里已经没有的 POI 会被删除。
+
+更新快照后先运行 `cd backend && go test ./internal/importer/`：`snapshot_test.go` 要求 POI 数量在 4000 到 4300 之间，OSM 数据增长后可能需要调整这个范围。
