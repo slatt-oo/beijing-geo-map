@@ -103,6 +103,7 @@ func TestDedupeSubwayStationsKeepsOneStationPerNearbyName(t *testing.T) {
 		{OSMType: "n", OSMID: 40, Name: "草桥", Category: "subway_station", Lng: 116.3500, Lat: 39.8460},
 		{OSMType: "n", OSMID: 50, Name: "草桥", Category: "subway_station", Lng: 116.3500, Lat: 39.8500},
 		{OSMType: "n", OSMID: 60, Name: "动物园", Category: "attraction", Lng: 116.3360, Lat: 39.9390},
+		{OSMType: "n", OSMID: 70, Name: "车公庄", Category: "subway_station", Lng: 116.3545, Lat: 39.9402},
 	}
 
 	got := dedupeSubwayStations(pois)
@@ -111,7 +112,7 @@ func TestDedupeSubwayStationsKeepsOneStationPerNearbyName(t *testing.T) {
 	for _, p := range got {
 		keys = append(keys, fmt.Sprintf("%s%d", p.OSMType, p.OSMID))
 	}
-	want := []string{"n60", "n20", "n40", "n50"}
+	want := []string{"n60", "n20", "n40", "n50", "n70"}
 	if strings.Join(keys, ",") != strings.Join(want, ",") {
 		t.Fatalf("kept = %v, want %v", keys, want)
 	}
