@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
 	"runtime/debug"
 	"time"
 
@@ -14,7 +15,12 @@ func requestLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
-		slog.InfoContext(c.Request.Context(), "request",
+		level := slog.LevelInfo
+		// compose 每 5 秒探测一次健康检查，成功的探测记为 Debug，避免淹没访问日志。
+		if c.Request.URL.Path == healthPath && c.Writer.Status() < http.StatusBadRequest {
+			level = slog.LevelDebug
+		}
+		slog.Log(c.Request.Context(), level, "request",
 			"method", c.Request.Method,
 			"path", c.Request.URL.Path,
 			"query", c.Request.URL.RawQuery,

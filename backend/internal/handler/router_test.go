@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -190,5 +191,40 @@ func TestSmallResponsesAreNotGzipped(t *testing.T) {
 	data, ok := decodeJSON(t, body)["data"].(map[string]any)
 	if !ok || data["status"] != "ok" || data["db"] != "ok" {
 		t.Fatalf("body = %s, want data.status=ok and data.db=ok", body)
+	}
+}
+
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+func TestSuccessfulHealthChecksAreNotLoggedAtInfo(t *testing.T) {
+	logs := captureLogs(t)
+	r := NewRouter(Deps{DB: fakePinger{}})
+
+	get(t, r, "/api/v1/health", nil)
+	get(t, r, "/api/v1/does-not-exist", nil)
+
+	if strings.Contains(logs.String(), `"path":"/api/v1/health"`) {
+		t.Fatalf("successful health check was logged at info level:\n%s", logs)
+	}
+	if !strings.Contains(logs.String(), `"path":"/api/v1/does-not-exist"`) {
+		t.Fatalf("other requests must still be logged at info level:\n%s", logs)
+	}
+}
+
+func TestFailedHealthChecksAreLoggedAtInfo(t *testing.T) {
+	logs := captureLogs(t)
+	r := NewRouter(Deps{DB: fakePinger{err: errors.New("connection refused")}})
+
+	get(t, r, "/api/v1/health", nil)
+
+	if !strings.Contains(logs.String(), `"path":"/api/v1/health"`) || !strings.Contains(logs.String(), `"status":503`) {
+		t.Fatalf("failed health check must be logged at info level with status 503:\n%s", logs)
 	}
 }

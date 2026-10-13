@@ -56,3 +56,34 @@ func TestLoadRejectsUnknownLogLevel(t *testing.T) {
 		t.Fatalf("err = %v, want an error mentioning LOG_LEVEL", err)
 	}
 }
+
+func TestLoadDefaultsDataDir(t *testing.T) {
+	cfg, err := load(envFrom(map[string]string{"DATABASE_URL": "postgres://x"}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DataDir != "/data" {
+		t.Errorf("DataDir = %q, want /data", cfg.DataDir)
+	}
+}
+
+func TestLoadTrimsWhitespace(t *testing.T) {
+	cfg, err := load(envFrom(map[string]string{
+		"DATABASE_URL": "  postgres://x  ",
+		"HTTP_ADDR":    " :9000 ",
+		"DATA_DIR":     " ../data/raw ",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DatabaseURL != "postgres://x" || cfg.HTTPAddr != ":9000" || cfg.DataDir != "../data/raw" {
+		t.Errorf("cfg = %+v, want trimmed values", cfg)
+	}
+}
+
+func TestLoadRejectsBlankDatabaseURL(t *testing.T) {
+	_, err := load(envFrom(map[string]string{"DATABASE_URL": "   "}))
+	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") {
+		t.Fatalf("err = %v, want an error mentioning DATABASE_URL", err)
+	}
+}
