@@ -29,8 +29,8 @@
 | 层 | 选型 | 选择理由 |
 |---|---|---|
 | 数据库 | PostgreSQL 16 + PostGIS 3.4 | 空间数据的事实标准，空间索引和空间函数最完整 |
-| 后端 | Go + Gin + pgx v5 + golang-migrate | 性能好，部署是单个二进制；直接用 pgx 手写 SQL，空间查询完全可控 |
-| 前端 | React 18 + TypeScript + Vite | 主流组合，类型安全，开发体验好 |
+| 后端 | Go 1.26 + Gin + pgx v5 + golang-migrate | 性能好，部署是单个二进制；直接用 pgx 手写 SQL，空间查询完全可控 |
+| 前端 | React 19 + TypeScript 6 + Vite 8 | 主流组合，类型安全，开发体验好。TypeScript 暂时固定在 6.0，因为 typescript-eslint 8 只支持到 6.0 |
 | 地图渲染 | MapLibre GL JS | 开源的 WebGL 地图引擎，支持 GeoJSON 数据源、聚合和 `feature-state` |
 | 底图 | 高德公开栅格瓦片 | 无需申请 Key，国内访问快；坐标系为 GCJ-02，需要做纠偏 |
 | 前端状态 | TanStack Query + Zustand | 前者管理服务端数据缓存，后者管理地图交互状态 |
