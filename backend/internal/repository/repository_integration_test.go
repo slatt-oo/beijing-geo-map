@@ -44,13 +44,13 @@ func setup(t *testing.T) fixture {
 		lng, lat float64
 		tags     map[string]string
 	}{
-		{"北京大学", ptr("Peking University"), "university", &districtA, 116.050, 40.050, map[string]string{"website": "https://www.pku.edu.cn"}},
-		{"北京大学医学部", nil, "university", &districtA, 116.050, 40.0545, map[string]string{}},
 		{"清华大学", nil, "university", &districtA, 116.050, 40.059, map[string]string{}},
+		{"北京大学医学部", nil, "university", &districtA, 116.050, 40.0545, map[string]string{}},
+		{"北京大学", ptr("Peking University"), "university", &districtA, 116.050, 40.050, map[string]string{"website": "https://www.pku.edu.cn"}},
 		{"测试地铁站", nil, "subway_station", &districtA, 116.020, 40.020, map[string]string{}},
-		{"测试公园", nil, "park", &districtB, 116.150, 40.050, map[string]string{}},
-		{"100%纯净公园", nil, "park", &districtB, 116.160, 40.050, map[string]string{}},
 		{"a_b 博物馆", nil, "attraction", &districtB, 116.170, 40.050, map[string]string{}},
+		{"100%纯净公园", nil, "park", &districtB, 116.160, 40.050, map[string]string{}},
+		{"测试公园", nil, "park", &districtB, 116.150, 40.050, map[string]string{}},
 		{"境外医院", nil, "hospital", nil, 117.000, 41.000, map[string]string{}},
 	} {
 		var id int64
@@ -64,6 +64,10 @@ func setup(t *testing.T) fixture {
 			t.Fatalf("insert poi %s: %v", p.name, err)
 		}
 		f.poiIDs[p.name] = id
+	}
+	// 插入顺序（id 顺序）与各项查询的期望顺序都不同；再把 id 最小的一行挪到堆末尾，缺少 ORDER BY 时顺序扫描的结果就会暴露出来。
+	if _, err := pool.Exec(context.Background(), `UPDATE poi SET tags = tags WHERE name = '清华大学'`); err != nil {
+		t.Fatalf("move 清华大学 to the end of the heap: %v", err)
 	}
 	return f
 }
@@ -225,11 +229,12 @@ func TestInBBoxFiltersByEnvelopeAndCategory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InBBox: %v", err)
 	}
-	if want := []string{"北京大学", "北京大学医学部", "清华大学", "测试地铁站"}; !slices.Equal(summaryNames(pois), want) || truncated {
+	if want := []string{"清华大学", "北京大学医学部", "北京大学", "测试地铁站"}; !slices.Equal(summaryNames(pois), want) || truncated {
 		t.Fatalf("InBBox = %v (truncated %v), want %v", summaryNames(pois), truncated, want)
 	}
-	if pois[0].Category != "university" || pois[0].Location != [2]float64{116.05, 40.05} {
-		t.Errorf("first POI = %+v", pois[0])
+	pku := pois[slices.IndexFunc(pois, func(p model.POISummary) bool { return p.Name == "北京大学" })]
+	if pku.Category != "university" || pku.Location != [2]float64{116.05, 40.05} {
+		t.Errorf("北京大学 = %+v", pku)
 	}
 
 	pois, _, err = repo.InBBox(context.Background(), boxA, []int16{categoryID(t, f.pool, "subway_station")}, 100)
@@ -249,16 +254,16 @@ func TestInBBoxReportsTruncation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InBBox: %v", err)
 	}
-	if len(pois) != 2 || !truncated {
-		t.Fatalf("limit 2: got %d POIs, truncated %v; want 2, true", len(pois), truncated)
+	if want := []string{"清华大学", "北京大学医学部"}; !slices.Equal(summaryNames(pois), want) || !truncated {
+		t.Fatalf("limit 2: got %v, truncated %v; want %v, true", summaryNames(pois), truncated, want)
 	}
 
 	pois, truncated, err = repo.InBBox(context.Background(), boxA, nil, 4)
 	if err != nil {
 		t.Fatalf("InBBox: %v", err)
 	}
-	if len(pois) != 4 || truncated {
-		t.Fatalf("limit 4: got %d POIs, truncated %v; want 4, false", len(pois), truncated)
+	if want := []string{"清华大学", "北京大学医学部", "北京大学", "测试地铁站"}; !slices.Equal(summaryNames(pois), want) || truncated {
+		t.Fatalf("limit 4: got %v, truncated %v; want %v, false", summaryNames(pois), truncated, want)
 	}
 }
 
@@ -268,7 +273,7 @@ func TestGetPOIReturnsDetail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if p.Name != "北京大学" || p.NameEn == nil || *p.NameEn != "Peking University" || p.OSMType != "n" || p.OSMID != 1 {
+	if p.Name != "北京大学" || p.NameEn == nil || *p.NameEn != "Peking University" || p.OSMType != "n" || p.OSMID != 3 {
 		t.Errorf("identity fields = %+v", p)
 	}
 	if p.Category.Code != "university" || p.Category.Name != "高校" || p.Category.Color != "#1E88E5" {
