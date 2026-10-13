@@ -67,6 +67,13 @@ func storedPOIs(t *testing.T, pool *pgxpool.Pool) map[string]storedPOI {
 	return result
 }
 
+func adcodeOf(p storedPOI) string {
+	if p.Adcode == nil {
+		return ""
+	}
+	return *p.Adcode
+}
+
 func countPOIs(t *testing.T, pool *pgxpool.Pool) int {
 	t.Helper()
 	var n int
@@ -109,24 +116,25 @@ func TestRunLoadsFixtureSnapshot(t *testing.T) {
 			t.Errorf("POI %s is missing", key)
 			continue
 		}
-		adcode := ""
-		if got.Adcode != nil {
-			adcode = *got.Adcode
-		}
+		adcode := adcodeOf(got)
 		if got.Name != w.name || got.Category != w.category || adcode != w.adcode {
 			t.Errorf("POI %s = {%s %s %q}, want {%s %s %q}", key, got.Name, got.Category, adcode, w.name, w.category, w.adcode)
 		}
 	}
 
 	var nameEn, address, website string
+	var lng, lat float64
 	err := pool.QueryRow(context.Background(),
-		`SELECT name_en, address, tags->>'website' FROM poi WHERE osm_type = 'n' AND osm_id = 1001`).
-		Scan(&nameEn, &address, &website)
+		`SELECT name_en, address, tags->>'website', ST_X(geom), ST_Y(geom) FROM poi WHERE osm_type = 'n' AND osm_id = 1001`).
+		Scan(&nameEn, &address, &website, &lng, &lat)
 	if err != nil {
 		t.Fatalf("query n1001: %v", err)
 	}
 	if nameEn != "Test University" || address != "测试路1号" || website != "https://example.edu" {
 		t.Errorf("n1001 = (%q, %q, %q)", nameEn, address, website)
+	}
+	if math.Abs(lng-116.05) > 1e-9 || math.Abs(lat-40.05) > 1e-9 {
+		t.Errorf("n1001 location = (%v, %v), want (116.05, 40.05): OSM coordinates are already WGS-84 and must be stored as is", lng, lat)
 	}
 
 	wantLng, wantLat := geo.GCJ02ToWGS84(116.05, 40.05)
@@ -181,13 +189,45 @@ func TestRunRejectsSnapshotBelowMinimumWithoutTouchingData(t *testing.T) {
 	pool := testdb.New(t, "importer")
 	runImport(t, pool, fixtureDir, 1)
 
-	_, err := importer.Run(context.Background(), pool, importer.Options{DataDir: fixtureDir, MinPOIs: 7})
+	dir := t.TempDir()
+	copyFile(t, filepath.Join(fixtureDir, importer.DistrictsFile), filepath.Join(dir, importer.DistrictsFile))
+	writeSnapshotWithout(t, filepath.Join(dir, importer.POIsFile), 2002)
+
+	_, err := importer.Run(context.Background(), pool, importer.Options{DataDir: dir, MinPOIs: 6})
 
 	if err == nil || !strings.Contains(err.Error(), "minimum") {
 		t.Fatalf("err = %v, want a minimum-size error", err)
 	}
 	if n := countPOIs(t, pool); n != 6 {
 		t.Fatalf("POIs after rejected import = %d, want 6", n)
+	}
+	if _, ok := storedPOIs(t, pool)["w2002"]; !ok {
+		t.Fatal("w2002 was deleted by the rejected import")
+	}
+}
+
+func TestRunReassignsAndClearsDistricts(t *testing.T) {
+	pool := testdb.New(t, "importer")
+	runImport(t, pool, fixtureDir, 1)
+
+	dir := t.TempDir()
+	copyFile(t, filepath.Join(fixtureDir, importer.DistrictsFile), filepath.Join(dir, importer.DistrictsFile))
+	writeSnapshotWithCenters(t, filepath.Join(dir, importer.POIsFile), map[int64][2]float64{
+		2002: {116.05, 40.04},
+		2001: {117.0, 41.0},
+	})
+
+	stats := runImport(t, pool, dir, 1)
+
+	pois := storedPOIs(t, pool)
+	if got := adcodeOf(pois["w2002"]); got != "990001" {
+		t.Errorf("w2002 adcode = %q, want 990001 after moving into 测试甲区", got)
+	}
+	if got := adcodeOf(pois["w2001"]); got != "" {
+		t.Errorf("w2001 adcode = %q, want NULL after moving outside every district", got)
+	}
+	if stats.POIsWithDistrict != 4 {
+		t.Errorf("POIsWithDistrict = %d, want 4", stats.POIsWithDistrict)
 	}
 }
 
@@ -232,6 +272,32 @@ func copyFile(t *testing.T, src, dst string) {
 
 func writeSnapshotWithout(t *testing.T, dst string, osmID int64) {
 	t.Helper()
+	elements := fixtureElements(t)
+	kept := elements[:0]
+	for _, el := range elements {
+		if el["id"] != float64(osmID) {
+			kept = append(kept, el)
+		}
+	}
+	writeSnapshot(t, dst, kept)
+}
+
+// writeSnapshotWithCenters 把 centers 中列出的要素（按 osm_id）的 center 改成给定的 [经度, 纬度]。
+func writeSnapshotWithCenters(t *testing.T, dst string, centers map[int64][2]float64) {
+	t.Helper()
+	elements := fixtureElements(t)
+	for _, el := range elements {
+		for osmID, c := range centers {
+			if el["id"] == float64(osmID) {
+				el["center"] = map[string]any{"lat": c[1], "lon": c[0]}
+			}
+		}
+	}
+	writeSnapshot(t, dst, elements)
+}
+
+func fixtureElements(t *testing.T) []map[string]any {
+	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(fixtureDir, importer.POIsFile))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
@@ -242,13 +308,12 @@ func writeSnapshotWithout(t *testing.T, dst string, osmID int64) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatalf("decode fixture: %v", err)
 	}
-	kept := doc.Elements[:0]
-	for _, el := range doc.Elements {
-		if el["id"] != float64(osmID) {
-			kept = append(kept, el)
-		}
-	}
-	out, err := json.Marshal(map[string]any{"elements": kept})
+	return doc.Elements
+}
+
+func writeSnapshot(t *testing.T, dst string, elements []map[string]any) {
+	t.Helper()
+	out, err := json.Marshal(map[string]any{"elements": elements})
 	if err != nil {
 		t.Fatalf("encode snapshot: %v", err)
 	}
