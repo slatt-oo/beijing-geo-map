@@ -50,7 +50,26 @@ func URL(t testing.TB, name string) string {
 		t.Fatalf("testdb: parse TEST_DATABASE_URL: %v", err)
 	}
 	u.Path = "/" + dbName
-	return u.String()
+	// pgx 会用查询参数里的 dbname 或 database 覆盖路径中的库名。
+	q := u.Query()
+	q.Del("dbname")
+	q.Del("database")
+	u.RawQuery = q.Encode()
+	dbURL := u.String()
+
+	testConn, err := pgx.Connect(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("testdb: connect %s: %v", dbName, err)
+	}
+	defer testConn.Close(ctx)
+	var current string
+	if err := testConn.QueryRow(ctx, `SELECT current_database()`).Scan(&current); err != nil {
+		t.Fatalf("testdb: query current database of %s: %v", dbName, err)
+	}
+	if current != dbName {
+		t.Fatalf("testdb: refusing to use %s: connected to database %q, want %q", u.Redacted(), current, dbName)
+	}
+	return dbURL
 }
 
 func New(t testing.TB, name string) *pgxpool.Pool {
