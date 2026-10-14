@@ -45,13 +45,15 @@ func run() error {
 	}
 	defer pool.Close()
 
+	catalog := service.NewCatalog(repository.NewCategoryRepo(pool))
+	router := handler.NewRouter(handler.Deps{
+		DB:        pool,
+		Districts: service.NewDistrictService(repository.NewDistrictRepo(pool)),
+		POIs:      service.NewPOIService(repository.NewPOIRepo(pool), catalog),
+	})
 	srv := &http.Server{
-		Addr: cfg.HTTPAddr,
-		Handler: handler.NewRouter(handler.Deps{
-			DB:        pool,
-			Districts: service.NewDistrictService(repository.NewDistrictRepo(pool)),
-			POIs:      service.NewPOIService(repository.NewPOIRepo(pool), service.NewCatalog(repository.NewCategoryRepo(pool))),
-		}),
+		Addr:              cfg.HTTPAddr,
+		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
