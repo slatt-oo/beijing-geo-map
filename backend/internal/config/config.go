@@ -11,6 +11,7 @@ import (
 type Config struct {
 	DatabaseURL string
 	HTTPAddr    string
+	DataDir     string
 	LogLevel    slog.Level
 }
 
@@ -20,14 +21,18 @@ func Load() (Config, error) {
 
 func load(getenv func(string) string) (Config, error) {
 	cfg := Config{
-		DatabaseURL: getenv("DATABASE_URL"),
-		HTTPAddr:    getenv("HTTP_ADDR"),
+		DatabaseURL: strings.TrimSpace(getenv("DATABASE_URL")),
+		HTTPAddr:    strings.TrimSpace(getenv("HTTP_ADDR")),
+		DataDir:     strings.TrimSpace(getenv("DATA_DIR")),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL 未设置")
 	}
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = ":8000"
+	}
+	if cfg.DataDir == "" {
+		cfg.DataDir = "/data"
 	}
 	level, err := parseLevel(getenv("LOG_LEVEL"))
 	if err != nil {

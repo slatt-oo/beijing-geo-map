@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS poi;
+DROP TABLE IF EXISTS poi_category;
+DROP TABLE IF EXISTS district;

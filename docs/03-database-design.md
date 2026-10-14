@@ -206,7 +206,7 @@ SELECT d.adcode,
        d.name,
        d.area_km2,
        ST_AsGeoJSON(d.center, 6)                                  AS center,
-       ST_AsGeoJSON(ST_SimplifyPreserveTopology(d.geom, 0.0001), 6) AS geometry,
+       ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(d.geom, 0.0001)), 6) AS geometry,
        COUNT(p.id)                                                AS poi_count
 FROM district d
 LEFT JOIN poi p ON p.district_id = d.id
@@ -214,7 +214,7 @@ GROUP BY d.id
 ORDER BY d.adcode;
 ```
 
-`ST_SimplifyPreserveTopology` 是逐个要素独立简化的，相邻两个区的公共边界简化后可能出现极细的缝隙。容差为 0.0001 度（约 10 米）时，城市尺度下肉眼看不出来。
+`ST_SimplifyPreserveTopology` 是逐个要素独立简化的，相邻两个区的公共边界简化后可能出现极细的缝隙。容差为 0.0001 度（约 10 米）时，城市尺度下肉眼看不出来。外面再套一层 `ST_Multi`：只含一个多边形的 MultiPolygon 简化后会变成 Polygon，套上之后返回的几何类型始终是 MultiPolygon。
 
 ### 6.2 区详情（`/districts/{adcode}`）
 
@@ -367,21 +367,17 @@ WHERE NOT EXISTS (
 ### 7.4 重算 `district_id`
 
 ```sql
--- 1. 为每个 POI 找到包含它的区
+-- 一条语句同时完成分配和清空：不在任何区内的 POI 得到 NULL。
+-- 多个区都包含同一个点时取 adcode 最小的区，保证重复导入的结果稳定。
 UPDATE poi p
-SET district_id = d.id, updated_at = now()
-FROM district d
-WHERE ST_Contains(d.geom, p.geom)
-  AND p.district_id IS DISTINCT FROM d.id;
-
--- 2. 不再位于任何区内的 POI 置为 NULL
-UPDATE poi p
-SET district_id = NULL, updated_at = now()
-WHERE p.district_id IS NOT NULL
-  AND NOT EXISTS (
-      SELECT 1 FROM district d
-      WHERE d.id = p.district_id AND ST_Contains(d.geom, p.geom)
-  );
+SET district_id = m.district_id, updated_at = now()
+FROM (
+    SELECT p2.id AS poi_id,
+           (SELECT d.id FROM district d WHERE ST_Contains(d.geom, p2.geom) ORDER BY d.adcode LIMIT 1) AS district_id
+    FROM poi p2
+) m
+WHERE m.poi_id = p.id
+  AND p.district_id IS DISTINCT FROM m.district_id;
 ```
 
 ## 8. 迁移文件

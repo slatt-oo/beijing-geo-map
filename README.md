@@ -4,7 +4,7 @@
 
 一个基于 PostgreSQL + PostGIS、Go 和 React + MapLibre GL 的北京市地图 Demo：渲染北京 16 个区的边界，并支持 POI 标注、浏览器定位与「我在哪个区」、名称搜索和附近查询。
 
-> **当前状态：开发中。** 项目骨架已经可以一键启动，地图功能按阶段推进中，进度见[实现文档](docs/01-implementation-plan.md#5-阶段计划)。
+> **当前状态：开发中。** 数据层已经完成：启动时会自动导入北京 16 个区的边界和约 4100 个 POI。地图功能按阶段推进中，进度见[实现文档](docs/01-implementation-plan.md#5-阶段计划)。
 
 ## 功能（第一版）
 
@@ -35,14 +35,19 @@ docker compose up --build
 
 启动后访问 <http://localhost:8080>。端口、数据库账号和构建镜像时的依赖源都可以在 `.env` 中修改，参见 `.env.example`。例如 8080 端口被占用时，可以用 `FRONTEND_PORT=8090 docker compose up --build`。数据库端口只绑定在本机 127.0.0.1，局域网内的其他机器访问不到；如果 5432 端口已被占用（例如本机装了 PostgreSQL），可以用 `DB_PORT` 换一个端口。
 
-本地开发时不需要构建镜像：
+首次启动时，`seed` 服务会先执行数据库迁移，再导入 `data/raw/` 下的数据快照，完成后后端才会启动。之后每次 `docker compose up` 都会重新导入一遍，导入是幂等的，不会产生重复数据。
+
+本地开发时不需要构建整套镜像（`make dev-db` 只会构建一次导入数据用的后端镜像）：
 
 ```bash
-make dev-db         # 只启动数据库
-make run-backend    # 启动后端，监听 localhost:8000
-make run-frontend   # 启动前端开发服务器，/api 会被代理到 localhost:8000
-make test           # 运行前后端单元测试
+make dev-db           # 启动数据库，并通过 seed 服务完成迁移和数据导入
+make run-backend      # 启动后端，监听 localhost:8000
+make run-frontend     # 启动前端开发服务器，/api 会被代理到 localhost:8000
+make test             # 运行前后端单元测试
+make test-integration # 运行数据库集成测试（需要先 make dev-db），测试使用独立的 geo_test_* 数据库
 ```
+
+`Makefile` 会读取 `.env`，所以在 `.env` 里修改 `DB_PORT` 或数据库账号后，本地开发命令也会使用新的设置。数据快照的来源、许可和更新方法见 [data/README.md](data/README.md)。
 
 ## 文档
 

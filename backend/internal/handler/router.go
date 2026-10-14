@@ -11,6 +11,7 @@ import (
 const (
 	requestTimeoutDuration = 5 * time.Second
 	gzipMinLength          = 1024
+	healthPath             = "/api/v1/health"
 )
 
 type Deps struct {
@@ -33,7 +34,6 @@ func NewRouter(deps Deps) *gin.Engine {
 		writeError(c, http.StatusNotFound, CodeNotFound, "接口不存在")
 	})
 
-	api := r.Group("/api/v1")
-	api.GET("/health", healthHandler(deps.DB))
+	r.GET(healthPath, healthHandler(deps.DB))
 	return r
 }

@@ -1,6 +1,12 @@
-.PHONY: up down logs dev-db run-backend run-frontend test test-backend test-frontend test-integration lint
+.PHONY: up down logs dev-db seed run-backend run-frontend test test-backend test-frontend test-integration lint fetch-osm
 
-DEV_DATABASE_URL ?= postgres://geo:geo@localhost:5432/geo?sslmode=disable
+-include .env
+
+POSTGRES_USER ?= geo
+POSTGRES_PASSWORD ?= geo
+POSTGRES_DB ?= geo
+DB_PORT ?= 5432
+DEV_DATABASE_URL ?= postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(DB_PORT)/$(POSTGRES_DB)?sslmode=disable
 
 up:
 	docker compose up --build -d
@@ -12,7 +18,11 @@ logs:
 	docker compose logs -f
 
 dev-db:
-	docker compose up -d db
+	docker compose up -d --wait db
+	docker compose run --rm --build seed
+
+seed:
+	docker compose run --rm --build seed
 
 run-backend:
 	cd backend && DATABASE_URL="$(DEV_DATABASE_URL)" go run ./cmd/server
@@ -29,8 +39,11 @@ test-frontend:
 	cd frontend && npm test
 
 test-integration:
-	cd backend && DATABASE_URL="$(DEV_DATABASE_URL)" go test -tags=integration ./...
+	cd backend && TEST_DATABASE_URL="$(DEV_DATABASE_URL)" go test -count=1 -tags=integration ./...
 
 lint:
-	cd backend && test -z "$$(gofmt -l .)" && go vet ./...
+	cd backend && unformatted="$$("$$(go env GOROOT)/bin/gofmt" -l .)" && if [ -n "$$unformatted" ]; then echo "以下文件需要 gofmt：" >&2; echo "$$unformatted" >&2; exit 1; fi && go vet -tags=integration ./...
 	cd frontend && npm run lint && npm run typecheck
+
+fetch-osm:
+	./scripts/fetch_osm_pois.sh

@@ -100,6 +100,7 @@ beijing-geo-map/
 | `HTTP_ADDR` | backend | `:8000` | 监听地址 |
 | `LOG_LEVEL` | backend、seed | `info` | 日志级别 |
 | `DATA_DIR` | seed | `/data` | 数据快照所在目录 |
+| `TEST_DATABASE_URL` | 集成测试 | 无（`make test-integration` 会自动设置） | 管理连接串。测试会在同一个服务器上创建并使用 `geo_test_<包名>` 数据库，不会改动开发库 |
 | `VITE_TILE_URL` | frontend（构建时） | 高德瓦片地址 | 底图瓦片模板，`{s}` 会展开为 1 到 4 号子域名 |
 | `VITE_TILE_CRS` | frontend（构建时） | `gcj02` | 底图坐标系；设为 `wgs84` 时关闭坐标转换 |
 | `DB_PORT` / `FRONTEND_PORT` | compose | `5432` / `8080` | 映射到宿主机的端口 |
@@ -110,15 +111,17 @@ beijing-geo-map/
 
 ### 3.3 本地开发模式
 
-开发时不需要每次都构建镜像：
+开发时不需要每次都构建整套镜像（`make dev-db` 只会构建导入数据用的后端镜像）：
 
 ```bash
-make dev-db          # 只启动 db 容器，并执行导入
-make run-backend     # go run ./cmd/server，连接 localhost:5432
+make dev-db          # 启动 db 容器并等待健康检查通过，再运行一次 seed 服务完成迁移和导入
+make run-backend     # go run ./cmd/server，连接本机的数据库端口
 make run-frontend    # npm run dev，由 Vite 把 /api 代理到 localhost:8000
 ```
 
-其他常用命令：`make up` / `make down` / `make logs` / `make test` / `make test-integration` / `make lint` / `make fetch-osm`。
+其他常用命令：`make up` / `make down` / `make logs` / `make seed`（重新导入） / `make test` / `make test-integration` / `make lint` / `make fetch-osm`（更新 POI 快照）。
+
+`Makefile` 会读取 `.env`，本地连接串由 `POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DB`、`DB_PORT` 拼出。`make test-integration` 把这个连接串作为 `TEST_DATABASE_URL` 传给测试，每个测试包在同一个服务器上创建并使用自己的 `geo_test_<包名>` 数据库，不会改动开发库里已导入的数据。
 
 ### 3.4 版本与依赖源
 
@@ -320,7 +323,7 @@ Go 的 `internal/geo` 和前端的 `coord.ts` 实现同一套算法，并且都�
    1. **导入行政区**：解析 DataV 的 `FeatureCollection`。在 Go 里把每个坐标从 GCJ-02 转成 WGS-84，然后交给 SQL 完成修复和计算：`ST_MakeValid` 修复转换后可能出现的自相交，`ST_Multi(ST_CollectionExtract(..., 3))` 统一成 MultiPolygon，`ST_PointOnSurface` 计算标注点（保证落在面内），`ST_Area(geom::geography)` 计算面积。最后按 `adcode` upsert。
    2. **导入 POI**：解析 Overpass 返回的 JSON。节点取 `lat`/`lon`，线和关系取 `center`。然后依次进行分类映射、名称选择和地铁站去重，最后按 `(osm_type, osm_id)` upsert。
    3. **同步删除**：把本次快照中所有 POI 的键写入临时表，删除数据库中存在、但快照里已经没有的 POI。快照解析出的 POI 少于 1000 条时，导入器直接报错退出，防止因为快照损坏而误删全部数据。
-   4. **重算 `district_id`**：用一条空间关联 `UPDATE` 完成，然后把已经不在任何区内的 POI 置为 `NULL`。
+   4. **重算 `district_id`**：用一条 `UPDATE` 同时完成分配和清空：每个 POI 取包含它的区（多个区都包含时取 `adcode` 最小的，保证重复导入的结果稳定），不在任何区内的置为 `NULL`。
 3. 输出统计信息：各表行数、各分类数量、`district_id` 填充率。
 
 **分类映射规则**：按下表顺序匹配，命中第一条就停止。
@@ -452,9 +455,9 @@ Zustand store 中保存的状态：
 | 单元测试 | `internal/geo`：读取共享样例，验证正向转换、反向转换和境外点 | `go test ./...` |
 | 单元测试 | `internal/handler`：`httptest` 加假的 service，覆盖每个接口的参数校验、错误码和响应结构 | 同上 |
 | 单元测试 | `internal/importer`：分类映射、名称选择、地铁站去重，使用小型 JSON 测试数据 | 同上 |
-| 集成测试 | `internal/repository` 和导入流程，连接真实的 PostGIS（构建标签 `integration`） | `go test -tags=integration ./...`，需要设置 `DATABASE_URL` |
+| 集成测试 | `migrations`、`internal/importer`、`internal/repository`，连接真实的 PostGIS（构建标签 `integration`） | `make test-integration`，或手动设置 `TEST_DATABASE_URL` 后运行 `go test -tags=integration ./...` |
 
-集成测试使用一份人造数据：两个相邻的正方形「区」，以及十几个分布在区内、区外和边界附近的点。覆盖以下场景：
+集成测试带 `integration` 构建标签，通过 `internal/testdb` 为每个测试包创建独立的 `geo_test_<包名>` 数据库。repository 和导入器的测试各自使用一份人造数据：两个相邻的正方形「区」，以及若干分布在区内和区外的点。导入器的测试还会导入真实快照，校验区的数量、POI 数量和所属区匹配率。覆盖以下场景：
 
 - 点在区内、点在区外两种情况下的定位结果。
 - bbox 查询，以及结果截断时的 `truncated` 标记。

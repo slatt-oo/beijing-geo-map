@@ -1,0 +1,11 @@
+{"version":0.6,"generator":"test fixture","elements":[
+  {"type":"node","id":1001,"lat":40.05,"lon":116.05,"tags":{"amenity":"university","name":"测试大学","name:en":"Test University","addr:full":"测试路1号","website":"https://example.edu"}},
+  {"type":"way","id":2001,"center":{"lat":40.06,"lon":116.15},"tags":{"leisure":"park","tourism":"attraction","name":"测试园林"}},
+  {"type":"way","id":2002,"center":{"lat":40.04,"lon":116.16},"tags":{"leisure":"park","name":"乙区公园"}},
+  {"type":"relation","id":3001,"center":{"lat":40.03,"lon":116.07},"tags":{"amenity":"hospital","name:zh":"测试医院","name":"Test Hospital"}},
+  {"type":"node","id":1002,"lat":40.02,"lon":116.02,"tags":{"railway":"station","station":"subway","name":"测试站"}},
+  {"type":"node","id":1003,"lat":40.0205,"lon":116.0205,"tags":{"public_transport":"station","subway":"yes","name":"测试站"}},
+  {"type":"node","id":1004,"lat":41.0,"lon":117.0,"tags":{"tourism":"museum","name":"区外博物馆"}},
+  {"type":"node","id":1005,"lat":40.05,"lon":116.12,"tags":{"amenity":"hospital"}},
+  {"type":"node","id":1006,"lat":40.05,"lon":116.13,"tags":{"shop":"supermarket","name":"不相关超市"}}
+]}
