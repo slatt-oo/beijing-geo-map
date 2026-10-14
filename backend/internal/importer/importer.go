@@ -12,7 +12,7 @@ import (
 
 type Options struct {
 	DataDir string
-	// MinPOIs 是快照中 POI 数量的下限。快照不足这个数量时拒绝导入，避免损坏的快照把 poi 表同步删空。
+	// MinPOIs 是范围过滤后 POI 数量的下限。不足这个数量时拒绝导入，避免损坏的快照把 poi 表同步删空。
 	MinPOIs int
 }
 
