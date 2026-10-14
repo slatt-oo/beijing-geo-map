@@ -2573,3 +2573,5 @@ git commit -m "docs: describe the phase 3 map frontend"
 3. 创建 PR：`gh pr create --base main --head phase-3-frontend-map`，标题为 `阶段 3：前端地图（底图、行政区、POI 图层）`，正文写明验收标准和验证证据。
 4. 等待 CI：`gh pr checks --watch`，确认 `backend`、`frontend`、`docker` 三个任务全部通过。
 5. 由用户审查并合并 PR。用户合并之前，不开始阶段 4。
+
+> **执行记录：** 全部任务完成后，整体审查又带来一轮修复（提交 `c7abf72`、`d0a7b86`）：数据图层改在 `style.load` 事件里建立，4xx 错误不再重试，POI 详情加载失败后可以再次点击，`/pois` 缓存保留 1 分钟，以及若干文档修正。本计划中的代码块保留为任务执行时的版本，以仓库中的代码为准。
