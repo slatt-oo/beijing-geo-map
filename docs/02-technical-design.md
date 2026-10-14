@@ -72,12 +72,13 @@ beijing-geo-map/
     ├── Dockerfile              # 多阶段构建：Node 构建，nginx 运行
     └── src/
         ├── main.tsx / App.tsx
-        ├── api/                # fetch 封装、类型定义、TanStack Query hooks
-        ├── lib/                # coord.ts、geojson.ts、bbox.ts 等纯函数
-        ├── map/                # 底图样式、地图实例 hook、各图层
+        ├── config.ts           # 底图地址、坐标转换函数、初始视野和地图可视范围
+        ├── api/                # fetch 封装、接口类型、TanStack Query hooks
+        ├── lib/                # coord.ts、geojson.ts、bbox.ts、tiles.ts 等纯函数
+        ├── map/                # 地图实例、图层定义、各图层组件、点击分发、POI 弹窗
         ├── store/              # Zustand 全局状态
-        ├── hooks/              # useGeolocation、useDebounce
-        └── components/         # 搜索框、分类筛选、面板、按钮、弹窗
+        ├── hooks/              # useGeolocation、useDebounce（阶段 4）
+        └── components/         # 分类开关、区详情面板、POI 详情卡片、错误提示条
 ```
 
 ## 3. 运行与配置
@@ -169,7 +170,7 @@ GCJ-02 是在 WGS-84 的基础上做了非线性偏移，在北京偏移量大�
 
 ### 4.4 前后端一致性
 
-Go 的 `internal/geo` 和前端的 `coord.ts` 实现同一套算法，并且都读取仓库根目录下的 `testdata/coord_cases.json`。样例文件中每条记录包含名称、WGS-84 坐标和 GCJ-02 坐标，覆盖天安门、鸟巢、北京大学、首都机场，以及一个中国境外的点。
+Go 的 `internal/geo` 和前端的 `coord.ts` 实现同一套算法，并且都读取仓库根目录下的 `testdata/coord_cases.json`。样例文件中每条记录包含名称、WGS-84 坐标和 GCJ-02 坐标，覆盖天安门、鸟巢、北京大学、首都机场，以及东、西、南、北四个方向的中国境外点（东京、塔什干、雅加达、雅库茨克）。前端的反向转换与 Go 的循环逐步一致：每轮都调用带境外判断的正向转换。
 
 样例值由广泛使用的开源库 [gcoord](https://github.com/hujiulong/gcoord) 生成，文件中会注明它的版本号。断言容差为：正向 `1e-6` 度；反向是 `forward(inverse(g))` 与 `g` 相差小于 `1e-6` 度。
 
@@ -392,12 +393,13 @@ Zustand store 中保存的状态：
 
 | 字段 | 含义 |
 |---|---|
-| `enabledCategories` | 当前开启的 POI 分类 |
-| `selectedDistrict` | 当前选中的区 |
-| `myLocation` | 我的位置，格式为 `{lng, lat, accuracy}`，WGS-84 |
-| `nearby` | 附近查询的中心和半径，格式为 `{center, radius}` 或 `null` |
-| `mode` | 当前模式：`normal`（普通）或 `pickLocation`（在地图上点选位置） |
+| `hiddenCategories` | 当前关闭的 POI 分类编码，为空表示全部开启。记录关闭的而不是开启的分类，这样分类列表加载完成之前也有确定的状态 |
+| `selectedDistrict` | 当前选中的区（`adcode`） |
 | `activePoiId` | 当前打开详情弹窗的 POI |
+| `errorMessage` | 右上角提示条显示的错误信息 |
+| `myLocation` | 我的位置，格式为 `{lng, lat, accuracy}`，WGS-84（阶段 4） |
+| `nearby` | 附近查询的中心和半径，格式为 `{center, radius}` 或 `null`（阶段 4） |
+| `mode` | 当前模式：`normal`（普通）或 `pickLocation`（在地图上点选位置）（阶段 4） |
 
 ### 6.2 页面布局
 
@@ -422,21 +424,23 @@ Zustand store 中保存的状态：
 
 所有数据在调用 `setData` 之前都要经过 `toDisplay()`，由 `lib/geojson.ts` 递归转换 GeoJSON 中的每个坐标。
 
+所有数据源和图层在地图的 `load` 事件里一次建好（数据先为空），保证从下到上的顺序固定，之后只调用 `setData` 和 `setPaintProperty`。区名标注使用单独的点数据源，由 `/districts` 返回的 `center` 生成。样式中不配置 `glyphs`：MapLibre 6 在没有字形地址时用浏览器本地字体绘制文字，区名和聚合数字都不依赖外部字形服务。
+
 ### 6.4 各功能的交互流程
 
 **F1 行政区**
 
 1. 页面首次加载时请求一次 `/districts`，结果长期缓存。
-2. 鼠标移入时设置 `hover` 状态并显示区名提示。
-3. 点击时用 `fitBounds` 缩放到该区，然后请求 `/districts/{adcode}`，在面板中展示面积和各分类数量。
+2. 鼠标移入时设置 `hover` 状态，并在鼠标旁显示区名提示。
+3. 点击时设置 `selected` 状态，用 `fitBounds` 缩放到该区（左侧给面板留出边距），然后请求 `/districts/{adcode}`，在面板中展示面积和各分类数量。点击北京以外的地方会取消选中。
 
 **F3 POI**
 
 1. 地图 `moveend` 事件触发后防抖 300ms。
-2. 取当前视野范围，经过 `toData()` 转换后请求 `/pois`。
-3. 请求参数（bbox 和分类）作为 TanStack Query 的缓存键，视野回到之前的位置时直接使用缓存。
-4. 点击聚合圆时调用 `getClusterExpansionZoom` 放大。
-5. 点击单个点时请求 `/pois/{id}`，并在 maplibre `Popup` 中通过 React portal 渲染详情。
+2. 取当前视野的四个角，分别经过 `toData()` 转换后取外包框，向外取整到 0.001°（约 100 米），再请求 `/pois`。`limit` 固定为 5000：当前约 4100 个 POI，全市视野也不会被截断，聚合数字才准确。
+3. 请求参数（bbox 和分类）作为 TanStack Query 的缓存键，视野回到之前的位置时直接使用缓存；换视野时先保留旧数据，新数据到达后再替换。分类全部关闭时不发请求，直接清空图层。
+4. 点击统一由一个处理函数分发：先查 POI 图层，再查区图层，所以点击区内的 POI 不会同时选中区。点击聚合圆时调用 `getClusterExpansionZoom` 放大；点到 POI 以外的地方会关闭详情弹窗。
+5. 点击单个点时请求 `/pois/{id}`，并在 maplibre `Popup` 中通过 React portal 渲染详情：名称、英文名、分类、所在区和 OSM 链接。地址由 OSM 标签拼接而成，质量参差不齐，第一版不显示。
 6. 结果被截断时（`truncated`），提示「当前范围数据过多，请放大地图」。
 
 **F2 我的位置**
@@ -464,7 +468,15 @@ Zustand store 中保存的状态：
 
 ### 6.5 接口调用封装
 
-`api/client.ts` 封装 `fetch`，负责拼接查询参数、解析 `{"error": ...}` 并抛出带 `code` 的 `ApiError`。`api/queries.ts` 为每个接口提供一个 TanStack Query hook。界面统一把错误显示为右上角的提示条，不会白屏。
+`api/client.ts` 封装 `fetch`，负责拼接查询参数、解析 `{"error": ...}` 并抛出带 `code` 的 `ApiError`。`api/queries.ts` 为每个接口提供一个 TanStack Query hook。所有查询的错误由 `QueryCache` 的 `onError` 统一写入 store，界面在右上角（分类开关上方）显示提示条，不会白屏。
+
+### 6.6 地图工程细节
+
+- **Web Worker 地址**：MapLibre 6 在运行时根据 `import.meta.url` 拼出 worker 文件的地址，打包后这个文件并不存在。因此用 `import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'` 让 Vite 输出 worker 文件，再调用 `setWorkerUrl(workerUrl)`。
+- **`.mjs` 的 MIME 类型**：nginx 自带的 `mime.types` 不认识 `.mjs`，会按 `application/octet-stream` 返回，浏览器拒绝把它当作模块加载。`nginx.conf` 在 `/assets/` 下为 `.mjs` 单独声明 `application/javascript`。
+- **可视范围**：地图的 `maxBounds` 是北京市边界外扩约 1° 的范围（经度 114.4 到 118.5，纬度 38.4 到 42.1，WGS-84，换算到底图坐标系后使用）。导入器用同一个范围过滤 POI，见 5.5 节。
+- **地址栏中的地图位置**：开启 MapLibre 的 `hash` 选项，地图位置写在地址栏中（`#缩放级别/纬度/经度`，底图坐标系），刷新或分享链接时回到同一视野。开发模式下 React StrictMode 会把地图创建两次，第一次销毁时会清掉地址里的位置，所以开发模式下打开带位置的链接不生效，生产构建不受影响。
+- **容器尺寸**：`maplibre-gl.css` 会给地图容器加上 `position: relative`，所以容器用 `h-full w-full` 撑满父元素，而不是 `absolute inset-0`。
 
 ## 7. 测试策略
 
@@ -492,7 +504,7 @@ Zustand store 中保存的状态：
 
 | 类型 | 范围 |
 |---|---|
-| Vitest 单元测试 | `lib/coord.ts`（读取同一份共享样例）、`lib/geojson.ts` 的递归坐标转换、`lib/bbox.ts`、`api/client.ts` 的参数拼接和错误解析 |
+| Vitest 单元测试 | `lib/coord.ts`（读取同一份共享样例）、`lib/geojson.ts` 的递归坐标转换、`lib/bbox.ts`、`lib/tiles.ts`、`lib/categories.ts`、`lib/format.ts`、`store/useAppStore.ts`、`api/client.ts` 的参数拼接和错误解析、`api/queries.ts` 的查询键和跳过条件（用 TanStack Query 的 `QueryObserver` 在 Node 中运行）。地图图层组件依赖 WebGL，不写单元测试，逻辑尽量放进上面这些纯函数 |
 | 手工验证 | 见第 10 节清单。阶段 3 和阶段 4 完成后，在浏览器中逐项操作并截图 |
 
 第一版不编写浏览器端到端测试。
