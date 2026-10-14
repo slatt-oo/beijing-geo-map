@@ -50,7 +50,10 @@ export function PoiLayer() {
 
   if (!data?.truncated) return null
   return (
-    <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-full bg-amber-50 px-4 py-1.5 text-sm text-amber-800 shadow ring-1 ring-amber-200">
+    <div
+      role="status"
+      className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-full bg-amber-50 px-4 py-1.5 text-sm text-amber-800 shadow ring-1 ring-amber-200"
+    >
       当前范围数据过多，请放大地图
     </div>
   )

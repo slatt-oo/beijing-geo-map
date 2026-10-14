@@ -12,7 +12,7 @@ export function DistrictPanel() {
   if (adcode === null) return null
   const colors = new Map(categories?.map((c) => [c.code, c.color]))
   return (
-    <aside className="absolute left-4 top-4 z-10 w-72 rounded-lg bg-white/95 p-4 shadow-lg ring-1 ring-slate-200">
+    <aside aria-label="区详情" className="absolute left-4 top-4 z-10 w-72 rounded-lg bg-white/95 p-4 shadow-lg ring-1 ring-slate-200">
       <div className="flex items-start justify-between gap-2">
         <h2 className="text-lg font-semibold text-slate-900">{detail?.name ?? (isError ? '加载失败' : '加载中…')}</h2>
         <button

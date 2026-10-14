@@ -43,6 +43,8 @@ export function poisQuery(bbox: BBox | null, categories: string[] | undefined | 
         : ({ signal }) => apiGet<POICollection>('/pois', { bbox: bboxParam(bbox), categories, limit: POI_LIMIT }, signal),
     placeholderData: categories === null ? undefined : keepPreviousData,
     staleTime: 5 * 60 * 1000,
+    // 全市视野下稍一平移 bbox 就会变，每条缓存都有约 4000 个要素，不必按默认在内存里保留 5 分钟。
+    gcTime: 60 * 1000,
   })
 }
 

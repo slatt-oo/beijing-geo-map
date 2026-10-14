@@ -44,8 +44,12 @@ export function DistrictLayer() {
     const move = map.on('mousemove', LAYER.districtFill, (e) => {
       const feature = e.features?.[0]
       if (!feature) return
-      setHovered(String(feature.properties.adcode))
-      tooltip.setLngLat(e.lngLat).setText(String(feature.properties.name))
+      const adcode = String(feature.properties.adcode)
+      if (adcode !== hovered) {
+        setHovered(adcode)
+        tooltip.setText(String(feature.properties.name))
+      }
+      tooltip.setLngLat(e.lngLat)
       if (!tooltip.isOpen()) tooltip.addTo(map)
     })
     const leave = map.on('mouseleave', LAYER.districtFill, () => {

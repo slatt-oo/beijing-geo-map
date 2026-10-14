@@ -22,7 +22,7 @@ function displayBounds([minLng, minLat, maxLng, maxLat]: BBox): [LngLat, LngLat]
   return [toDisplay([minLng, minLat]), toDisplay([maxLng, maxLat])]
 }
 
-// 地图加载完成、数据图层建好之后才渲染 children，子组件可以直接使用这些图层。
+// 样式加载完成、数据图层建好之后才渲染 children，子组件可以直接使用这些图层。
 export function MapView({ children }: { children?: ReactNode }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<MaplibreMap | null>(null)
@@ -37,7 +37,8 @@ export function MapView({ children }: { children?: ReactNode }) {
       hash: true,
       attributionControl: { compact: false },
     })
-    instance.on('load', () => {
+    // 用 style.load 而不是 load：load 要等首屏所有底图瓦片加载完才触发，接口请求会排在瓦片之后。
+    instance.once('style.load', () => {
       addDataLayers(instance)
       setMap(instance)
     })

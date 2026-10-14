@@ -7,15 +7,21 @@ import { toDisplay } from '../config'
 import { useAppStore } from '../store/useAppStore'
 import { useMap } from './MapView'
 
-// 弹窗内容由 React 渲染到一个固定的 div 里，再把这个 div 交给 MapLibre 的 Popup。
 export function PoiPopup() {
   const map = useMap()
   const id = useAppStore((s) => s.activePoiId)
-  const { data: poi } = usePoiDetail(id)
+  const { data: poi, isError } = usePoiDetail(id)
   const [container] = useState(() => document.createElement('div'))
+
+  // 详情加载失败时清掉选中的 POI，否则再次点击同一个点不会重新请求。
+  useEffect(() => {
+    if (isError) useAppStore.getState().openPoi(null)
+  }, [isError])
 
   useEffect(() => {
     if (!poi) return
+    // closeOnClick 必须关闭，清理时必须先 off 再 remove：MapLibre 关闭弹窗时会触发 close，
+    // 这两处一旦触发，都会把点击分发刚选中的下一个 POI 清掉。
     const popup = new Popup({ closeOnClick: false, offset: 10, maxWidth: '300px' })
       .setLngLat(toDisplay(poi.location))
       .setDOMContent(container)
