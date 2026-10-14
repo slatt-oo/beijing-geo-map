@@ -14,7 +14,7 @@ flowchart LR
     Raw["data/raw<br/>DataV 边界 + OSM 快照"] --> Seed
 ```
 
-**核心选择：REST 接口返回 GeoJSON。** 后端在 SQL 里用 `ST_AsGeoJSON` 生成几何数据，Go 代码只做原样透传，前端拿到 GeoJSON 后直接交给 MapLibre 渲染。点聚合在前端完成，坐标转换也集中在前端。
+**核心选择：REST 接口返回 GeoJSON。** 区边界在 SQL 里用 `ST_AsGeoJSON` 生成，Go 代码原样透传；POI 的点坐标由 SQL 以数值返回，service 组装成 GeoJSON Point。前端拿到 GeoJSON 后直接交给 MapLibre 渲染。点聚合在前端完成，坐标转换也集中在前端。
 
 之所以不用 MVT 矢量瓦片：第一版只有约 4000 条 POI，GeoJSON 完全够用；而且底图是 GCJ-02，如果用矢量瓦片，就必须在 SQL 里先做坐标偏移再切片，复杂度明显过剩。数据量大幅增长后再升级为矢量瓦片，见实现文档的「后续阶段」。
 
@@ -95,7 +95,7 @@ beijing-geo-map/
 
 | 变量 | 使用方 | 默认值 | 说明 |
 |---|---|---|---|
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | db | `geo` / `geo` / `geo` | 仅供本地 Demo 使用 |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | db、Makefile（拼出本地连接串） | `geo` / `geo` / `geo` | 仅供本地 Demo 使用 |
 | `DATABASE_URL` | backend、seed | `postgres://geo:geo@db:5432/geo?sslmode=disable` | 数据库连接串 |
 | `HTTP_ADDR` | backend | `:8000` | 监听地址 |
 | `LOG_LEVEL` | backend、seed | `info` | 日志级别 |
@@ -103,7 +103,7 @@ beijing-geo-map/
 | `TEST_DATABASE_URL` | 集成测试 | 无（`make test-integration` 会自动设置） | 管理连接串。测试会在同一个服务器上创建并使用 `geo_test_<包名>` 数据库，不会改动开发库 |
 | `VITE_TILE_URL` | frontend（构建时） | 高德瓦片地址 | 底图瓦片模板，`{s}` 会展开为 1 到 4 号子域名 |
 | `VITE_TILE_CRS` | frontend（构建时） | `gcj02` | 底图坐标系；设为 `wgs84` 时关闭坐标转换 |
-| `DB_PORT` / `FRONTEND_PORT` | compose | `5432` / `8080` | 映射到宿主机的端口 |
+| `DB_PORT` / `FRONTEND_PORT` | compose；Makefile 也读取 DB_PORT | `5432` / `8080` | 映射到宿主机的端口 |
 | `GOPROXY` | backend 镜像构建 | `https://goproxy.cn,direct` | Go 模块代理；CI 中设为 `https://proxy.golang.org,direct` |
 | `NPM_REGISTRY` | frontend 镜像构建 | `https://registry.npmjs.org/` | npm 源；国内可以改为 `https://registry.npmmirror.com/` |
 
@@ -180,8 +180,8 @@ Go 的 `internal/geo` 和前端的 `coord.ts` 实现同一套算法，并且都�
 | 层 | 包 | 职责 | 不做什么 |
 |---|---|---|---|
 | 接入层 | `handler` | 路由注册，解析和校验参数，把结果或错误写成 HTTP 响应 | 不写 SQL，不包含业务默认值 |
-| 业务层 | `service` | 默认值和上限，分类编码到 ID 的映射（启动时加载并缓存），组装返回结构 | 不接触 HTTP |
-| 数据层 | `repository` | 用 pgx 执行参数化 SQL，几何数据以 `ST_AsGeoJSON` 字符串形式返回 | 不解析几何 |
+| 业务层 | `service` | 各参数的默认值和上限常量；分类编码到 ID 的映射（第一次使用时加载并缓存，加载失败会在下次调用时重试）；组装返回结构（GeoJSON 和 `{"data": ...}`） | 不接触 HTTP |
+| 数据层 | `repository` | 用 pgx 执行参数化 SQL；区边界以 `ST_AsGeoJSON` 字符串返回，点坐标以数值返回 | 不解析几何 |
 
 `handler` 依赖 `service` 的接口，而不是具体实现，所以 handler 测试可以注入一个假的 service。`main.go` 负责组装依赖：先读取配置，再创建 `pgxpool`，然后依次创建 repository、service、handler，最后启动 `http.Server`。收到 `SIGTERM` 时优雅关闭，等待正在处理的请求完成，最长 10 秒。
 
@@ -192,12 +192,12 @@ Go 的 `internal/geo` 和前端的 `coord.ts` 实现同一套算法，并且都�
 | 请求日志 | 用 `slog` 输出 JSON 格式日志，记录方法、路径、状态码和耗时 |
 | panic 恢复 | 捕获 panic 并记录堆栈，返回统一格式的 500 |
 | 超时 | 每个请求带 5 秒 `context` 超时，并传递到 SQL 查询 |
-| gzip | 压缩响应。边界 GeoJSON 压缩前是几百 KB，压缩后只有几十 KB |
+| gzip | 压缩 1 KB 以上的响应。区边界 GeoJSON 压缩前约 100 KB |
 
 ### 5.3 接口约定
 
 - 所有接口都在 `/api/v1` 下，坐标一律是 WGS-84 的 `[经度, 纬度]`。
-- 返回空间数据的接口直接返回 GeoJSON `FeatureCollection`，不包外层，这样 MapLibre 可以直接使用。
+- 返回空间数据的接口直接返回 GeoJSON `FeatureCollection`，不包外层，这样 MapLibre 可以直接使用；`Content-Type` 为 `application/geo+json`。
 - 其他接口统一返回 `{"data": ...}`。
 - 下文接口示例中的数值仅作格式演示，不是真实数据；几何坐标数组做了省略。
 - 错误统一返回：
@@ -270,7 +270,7 @@ Go 的 `internal/geo` 和前端的 `coord.ts` 实现同一套算法，并且都�
 返回 `FeatureCollection`：
 
 - 每个 `Feature` 的 `id` 是 POI 的 ID，`properties` 包含 `{id, name, category}`。
-- 结果数量达到 `limit` 时，返回体顶层带 `"truncated": true`。GeoJSON 规范允许在顶层添加这种自定义字段。
+- 返回体顶层始终带 `truncated` 字段（GeoJSON 规范允许在顶层添加自定义字段），结果多于 `limit` 时为 `true`。截断按 `md5(id)` 打散的固定顺序进行，各分类、各区域按比例保留，见数据库设计文档 6.4 节。
 
 #### `GET /api/v1/pois/{id}`
 
@@ -356,6 +356,24 @@ area["ISO3166-2"="CN-BJ"]["admin_level"="4"]->.bj;
 );
 out center tags;
 ```
+
+### 5.6 接口实测耗时
+
+测量环境：Apple Silicon Mac，Colima，PostGIS 镜像在 amd64 模拟下运行，导入完整快照（16 个区、约 4100 个 POI）。经 nginx 访问，启用 gzip；每个接口请求 6 次，丢掉第 1 次预热，取后 5 次的中位数。测量日期：2026-10-14。
+
+| 接口 | 耗时（毫秒） |
+|---|---|
+| `GET /districts` | 58 |
+| `GET /districts/110108` | 7 |
+| `GET /districts/locate?lng=116.397&lat=39.908` | 4 |
+| `GET /poi-categories` | 3 |
+| `GET /pois?bbox=115.4,39.4,117.6,41.1`（全市，截断为 2000 条） | 114 |
+| `GET /pois?bbox=116.30,39.95,116.35,40.00`（约 5 千米见方） | 6 |
+| `GET /pois/{id}` | 4 |
+| `GET /pois/search?q=北京大学` | 6 |
+| `GET /pois/nearby?lng=116.397&lat=39.908&radius=1000` | 7 |
+
+模拟运行的数据库比原生运行慢，CI 和 Linux 服务器上的耗时会更短。
 
 ## 6. 前端设计
 

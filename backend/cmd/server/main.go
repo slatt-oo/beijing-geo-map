@@ -15,6 +15,8 @@ import (
 
 	"github.com/slatt-oo/beijing-geo-map/backend/internal/config"
 	"github.com/slatt-oo/beijing-geo-map/backend/internal/handler"
+	"github.com/slatt-oo/beijing-geo-map/backend/internal/repository"
+	"github.com/slatt-oo/beijing-geo-map/backend/internal/service"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -44,8 +46,12 @@ func run() error {
 	defer pool.Close()
 
 	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           handler.NewRouter(handler.Deps{DB: pool}),
+		Addr: cfg.HTTPAddr,
+		Handler: handler.NewRouter(handler.Deps{
+			DB:        pool,
+			Districts: service.NewDistrictService(repository.NewDistrictRepo(pool)),
+			POIs:      service.NewPOIService(repository.NewPOIRepo(pool), service.NewCatalog(repository.NewCategoryRepo(pool))),
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

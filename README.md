@@ -4,7 +4,7 @@
 
 一个基于 PostgreSQL + PostGIS、Go 和 React + MapLibre GL 的北京市地图 Demo：渲染北京 16 个区的边界，并支持 POI 标注、浏览器定位与「我在哪个区」、名称搜索和附近查询。
 
-> **当前状态：开发中。** 数据层已经完成：启动时会自动导入北京 16 个区的边界和约 4100 个 POI。地图功能按阶段推进中，进度见[实现文档](docs/01-implementation-plan.md#5-阶段计划)。
+> **当前状态：开发中。** 后端 API 已经完成，9 个接口都可以通过 `/api/v1` 访问，说明见[技术方案](docs/02-technical-design.md#54-接口清单)。地图前端按阶段推进中，进度见[实现文档](docs/01-implementation-plan.md#5-阶段计划)。
 
 ## 功能（第一版）
 
@@ -47,7 +47,7 @@ make test             # 运行前后端单元测试
 make test-integration # 运行数据库集成测试（需要先 make dev-db），测试使用独立的 geo_test_* 数据库
 ```
 
-`Makefile` 会读取 `.env`，所以在 `.env` 里修改 `DB_PORT` 或数据库账号后，本地开发命令也会使用新的设置。数据快照的来源、许可和更新方法见 [data/README.md](data/README.md)。
+`Makefile` 会读取 `.env`，所以在 `.env` 里修改 `DB_PORT` 或数据库账号后，本地开发命令也会使用新的设置。数据快照的来源、许可和更新方法见 [data/README.md](data/README.md)。临时覆盖某个值时请写成 `make run-backend DB_PORT=15432`：在 make 中，`.env` 的值优先于 shell 环境变量。`.env` 中的值不要加引号，也不要在行尾写注释。
 
 ## 文档
 
