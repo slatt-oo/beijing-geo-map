@@ -4,6 +4,8 @@ WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 RUN npm ci --registry=${NPM_REGISTRY}
 COPY . .
+ARG VITE_TILE_URL=
+ARG VITE_TILE_CRS=gcj02
 RUN npm run build
 
 FROM nginx:1.29-alpine
