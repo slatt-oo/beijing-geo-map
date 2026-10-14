@@ -194,6 +194,58 @@ func TestSmallResponsesAreNotGzipped(t *testing.T) {
 	}
 }
 
+func TestSmallGeoJSONResponsesAreNotMarkedAsGzip(t *testing.T) {
+	r := NewRouter(Deps{DB: fakePinger{}})
+	r.GET("/api/v1/test-geojson", func(c *gin.Context) {
+		writeGeoJSON(c, gin.H{"type": "FeatureCollection", "features": []any{}})
+	})
+
+	// 必须看 Result() 的响应头：它是写出那一刻的快照；rec.Header() 会反映中间件事后的删除，测不出这个问题。
+	res := get(t, r, "/api/v1/test-geojson", http.Header{"Accept-Encoding": {"gzip"}}).Result()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if got := res.Header.Get("Content-Encoding"); got != "" {
+		t.Fatalf("Content-Encoding = %q for a %d-byte body, want none", got, len(body))
+	}
+	if got := res.Header.Get("Content-Type"); got != geoJSONContentType {
+		t.Fatalf("Content-Type = %q, want %q", got, geoJSONContentType)
+	}
+	if string(body) != `{"features":[],"type":"FeatureCollection"}` {
+		t.Fatalf("body = %s", body)
+	}
+}
+
+func TestLargeGeoJSONResponsesAreGzipped(t *testing.T) {
+	r := NewRouter(Deps{DB: fakePinger{}})
+	name := strings.Repeat("北京", 1000)
+	r.GET("/api/v1/test-geojson", func(c *gin.Context) {
+		writeGeoJSON(c, gin.H{"type": "FeatureCollection", "name": name})
+	})
+
+	res := get(t, r, "/api/v1/test-geojson", http.Header{"Accept-Encoding": {"gzip"}}).Result()
+
+	if got := res.Header.Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("Content-Encoding = %q, want gzip", got)
+	}
+	if got := res.Header.Get("Content-Type"); got != geoJSONContentType {
+		t.Fatalf("Content-Type = %q, want %q", got, geoJSONContentType)
+	}
+	zr, err := gzip.NewReader(res.Body)
+	if err != nil {
+		t.Fatalf("body is not gzip: %v", err)
+	}
+	body, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("read gzip body: %v", err)
+	}
+	if got := decodeJSON(t, body)["name"]; got != name {
+		t.Fatalf("decompressed name mismatch (got %d bytes)", len(body))
+	}
+}
+
 func captureLogs(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer

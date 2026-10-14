@@ -17,11 +17,12 @@ type Options struct {
 }
 
 type Stats struct {
-	Districts        int
-	POIs             int
-	POIsWithDistrict int
-	POIsByCategory   map[string]int
-	DeletedPOIs      int64
+	Districts            int
+	POIs                 int
+	POIsWithDistrict     int
+	POIsByCategory       map[string]int
+	DeletedPOIs          int64
+	SkippedOutsideRegion int
 }
 
 // Run 导入 DataDir 下的两份快照。除了快照校验，其余步骤都在同一个事务里完成，任何一步失败都会整体回滚。
@@ -34,8 +35,9 @@ func Run(ctx context.Context, pool *pgxpool.Pool, opts Options) (Stats, error) {
 	if err != nil {
 		return Stats{}, err
 	}
+	pois, skipped := withinRegion(pois, beijingRegion)
 	if len(pois) < opts.MinPOIs {
-		return Stats{}, fmt.Errorf("snapshot has %d POIs, fewer than the minimum %d; refusing to import", len(pois), opts.MinPOIs)
+		return Stats{}, fmt.Errorf("snapshot has %d POIs inside the Beijing region, fewer than the minimum %d; refusing to import", len(pois), opts.MinPOIs)
 	}
 
 	tx, err := pool.Begin(ctx)
@@ -66,6 +68,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, opts Options) (Stats, error) {
 		return Stats{}, err
 	}
 	stats.DeletedPOIs = deleted
+	stats.SkippedOutsideRegion = skipped
 	if err := tx.Commit(ctx); err != nil {
 		return Stats{}, fmt.Errorf("commit: %w", err)
 	}

@@ -57,6 +57,7 @@ func run() error {
 		"pois", stats.POIs,
 		"pois_with_district", stats.POIsWithDistrict,
 		"deleted_pois", stats.DeletedPOIs,
+		"skipped_outside_region", stats.SkippedOutsideRegion,
 		"pois_by_category", stats.POIsByCategory,
 		"elapsed_ms", time.Since(start).Milliseconds(),
 	)
