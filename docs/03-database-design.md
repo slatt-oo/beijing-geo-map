@@ -197,108 +197,111 @@ OSM 的标签种类非常多，例如开放时间、网站、电话、门票、w
 
 ## 6. 典型查询
 
-以下是每个接口对应的核心 SQL。`$n` 表示参数占位符。
+以下是 repository 中各方法实际执行的 SQL（`backend/internal/repository/`），`$n` 表示参数占位符。点坐标统一以四舍五入到 6 位小数的数值返回，由 service 组装成 GeoJSON；只有区边界以 GeoJSON 字符串返回。
 
-### 6.1 区列表（`/districts`）
+### 6.1 区列表（`DistrictRepo.List`）
 
 ```sql
-SELECT d.adcode,
-       d.name,
-       d.area_km2,
-       ST_AsGeoJSON(d.center, 6)                                  AS center,
-       ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(d.geom, 0.0001)), 6) AS geometry,
-       COUNT(p.id)                                                AS poi_count
+SELECT d.adcode, d.name, d.area_km2::float8,
+       round(ST_X(d.center)::numeric, 6)::float8, round(ST_Y(d.center)::numeric, 6)::float8,
+       ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(d.geom, 0.0001)), 6),
+       count(p.id)
 FROM district d
 LEFT JOIN poi p ON p.district_id = d.id
 GROUP BY d.id
 ORDER BY d.adcode;
 ```
 
-`ST_SimplifyPreserveTopology` 是逐个要素独立简化的，相邻两个区的公共边界简化后可能出现极细的缝隙。容差为 0.0001 度（约 10 米）时，城市尺度下肉眼看不出来。外面再套一层 `ST_Multi`：只含一个多边形的 MultiPolygon 简化后会变成 Polygon，套上之后返回的几何类型始终是 MultiPolygon。
+`ST_SimplifyPreserveTopology` 是逐个要素独立简化的，相邻两个区的公共边界简化后可能出现极细的缝隙；容差为 0.0001 度（约 10 米）时，城市尺度下肉眼看不出来。外面再套一层 `ST_Multi`：只含一个多边形的 MultiPolygon 简化后会变成 Polygon，套上之后返回的几何类型始终是 MultiPolygon。
 
-### 6.2 区详情（`/districts/{adcode}`）
+### 6.2 区详情（`DistrictRepo.Get`）
 
 ```sql
 -- 基本信息
-SELECT id, adcode, name, area_km2, ST_AsGeoJSON(center, 6) AS center
-FROM district WHERE adcode = $1;
+SELECT id, adcode, name, area_km2::float8,
+       round(ST_X(center)::numeric, 6)::float8, round(ST_Y(center)::numeric, 6)::float8
+FROM district
+WHERE adcode = $1;
 
--- 各分类数量（用 LEFT JOIN 保证数量为 0 的分类也会返回）
--- $1 = 上一条查询得到的 district.id
-SELECT c.code, c.name, COUNT(p.id) AS count
+-- 各分类数量（LEFT JOIN 保证数量为 0 的分类也会返回）；$1 = 上一条查询得到的 district.id
+SELECT c.code, c.name, count(p.id)
 FROM poi_category c
 LEFT JOIN poi p ON p.category_id = c.id AND p.district_id = $1
 GROUP BY c.id
-ORDER BY c.sort_order;
+ORDER BY c.sort_order, c.id;
 ```
 
-### 6.3 我在哪个区（`/districts/locate`）
+`adcode` 是 `char(6)`，末尾带空格的输入也会匹配，所以接口层必须先校验它是 6 位数字。
+
+### 6.3 我在哪个区（`DistrictRepo.Locate`）
 
 ```sql
 SELECT adcode, name
 FROM district
 WHERE ST_Contains(geom, ST_SetSRID(ST_MakePoint($1, $2), 4326))
+ORDER BY adcode
 LIMIT 1;
 ```
 
-`ST_MakePoint` 的参数顺序是先经度、后纬度，和 GeoJSON 一致。
+`ST_MakePoint` 的参数顺序是先经度、后纬度。`ST_Contains` 不包含边界，恰好落在边界线上的点不属于任何区。`ORDER BY adcode` 与导入时重算 `district_id` 的规则一致。
 
-### 6.4 视野范围内的 POI（`/pois`）
+### 6.4 视野范围内的 POI（`POIRepo.InBBox`）
 
 ```sql
-SELECT p.id, p.name, c.code AS category, ST_AsGeoJSON(p.geom, 6) AS geometry
+SELECT p.id, p.name, c.code,
+       round(ST_X(p.geom)::numeric, 6)::float8, round(ST_Y(p.geom)::numeric, 6)::float8
 FROM poi p
 JOIN poi_category c ON c.id = p.category_id
 WHERE p.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
   AND ($5::smallint[] IS NULL OR p.category_id = ANY($5))
-ORDER BY p.id
-LIMIT $6 + 1;
+ORDER BY md5(p.id::text), p.id
+LIMIT $6;  -- $6 = limit + 1
 ```
 
-查询时多取 1 条：如果实际返回了 `limit + 1` 条，说明结果被截断了，丢掉最后一条后设置 `truncated: true`。这比额外执行一次 `COUNT(*)` 更省。
+- 查询时多取 1 条：实际返回 `limit + 1` 条说明结果被截断，丢掉最后一条后设置 `truncated: true`，比额外执行 `count(*)` 更省。
+- 按 `md5(id)` 排序：id 按导入顺序分配，同一分类的 id 连在一起（例如 411 个地铁站的 id 全部排在最后）。按 id 截断会让排在后面的分类整类缺失；按 `md5(id)` 打散后，截断时各分类、各区域按比例保留，并且顺序固定，同一请求总是得到同样的结果。
+- 分类过滤：Go 侧把 nil 或空的分类 ID 列表都转成 SQL `NULL`，表示不过滤。
 
-### 6.5 POI 详情（`/pois/{id}`）
+### 6.5 POI 详情（`POIRepo.Get`）
 
 ```sql
 SELECT p.id, p.name, p.name_en, p.osm_type, p.osm_id, p.address, p.tags,
-       c.code, c.name AS category_name, c.color,
-       d.adcode, d.name AS district_name,
-       ST_X(p.geom) AS lng, ST_Y(p.geom) AS lat
+       c.id, c.code, c.name, c.color,
+       d.adcode, d.name,
+       round(ST_X(p.geom)::numeric, 6)::float8, round(ST_Y(p.geom)::numeric, 6)::float8
 FROM poi p
 JOIN poi_category c ON c.id = p.category_id
 LEFT JOIN district d ON d.id = p.district_id
 WHERE p.id = $1;
 ```
 
-### 6.6 搜索（`/pois/search`）
+### 6.6 搜索（`POIRepo.Search`）
 
 ```sql
 -- $1 = '%' || 转义后的关键词 || '%'，$2 = 原始关键词，$3 = limit
-SELECT p.id, p.name, c.code AS category, d.name AS district_name,
-       ST_X(p.geom) AS lng, ST_Y(p.geom) AS lat
+SELECT p.id, p.name, c.code,
+       round(ST_X(p.geom)::numeric, 6)::float8, round(ST_Y(p.geom)::numeric, 6)::float8,
+       d.name
 FROM poi p
 JOIN poi_category c ON c.id = p.category_id
 LEFT JOIN district d ON d.id = p.district_id
-WHERE p.name ILIKE $1
-ORDER BY (p.name = $2) DESC,
-         similarity(p.name, $2) DESC,
-         length(p.name),
-         p.id
+WHERE p.name ILIKE $1::text
+ORDER BY (p.name = $2::text) DESC, similarity(p.name, $2::text) DESC, length(p.name), p.id
 LIMIT $3;
 ```
 
-PostgreSQL 中 `LIKE` / `ILIKE` 的默认转义字符是反斜杠。Go 代码会依次把关键词中的 `\`、`%`、`_` 替换成 `\\`、`\%`、`\_`。
+PostgreSQL 中 `LIKE` / `ILIKE` 的默认转义字符是反斜杠。Go 代码会把关键词中的 `\`、`%`、`_` 分别替换成 `\\`、`\%`、`\_`。
 
-### 6.7 附近查询（`/pois/nearby`）
+### 6.7 附近查询（`POIRepo.Nearby`）
 
 ```sql
 -- $1 = lng, $2 = lat, $3 = 半径（米）, $4 = 分类 ID 数组或 NULL, $5 = limit
 WITH origin AS (
     SELECT ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography AS g
 )
-SELECT p.id, p.name, c.code AS category,
-       ST_AsGeoJSON(p.geom, 6)                    AS geometry,
-       round(ST_Distance(p.geom::geography, o.g)) AS distance_m
+SELECT p.id, p.name, c.code,
+       round(ST_X(p.geom)::numeric, 6)::float8, round(ST_Y(p.geom)::numeric, 6)::float8,
+       round(ST_Distance(p.geom::geography, o.g))::int AS distance_m
 FROM poi p
 JOIN poi_category c ON c.id = p.category_id
 CROSS JOIN origin o
@@ -308,7 +311,15 @@ ORDER BY distance_m, p.id
 LIMIT $5;
 ```
 
-`ST_DWithin` 会先用 `poi_geog_gist` 索引按外包框过滤，再计算精确距离。这里不用 `ST_Distance(...) < r` 作为过滤条件，因为那种写法无法使用索引。
+`ST_DWithin` 会先用 `poi_geog_gist` 索引按外包框过滤，再计算精确距离。过滤条件不能写成 `ST_Distance(...) <= r`，那样用不上索引；集成测试会对这里的真实 SQL 执行 `EXPLAIN`，确认用上了索引。
+
+### 6.8 分类列表（`CategoryRepo.List`）
+
+```sql
+SELECT id, code, name, color FROM poi_category ORDER BY sort_order, id;
+```
+
+`sort_order` 不是唯一的，`id` 作为兜底保证顺序固定。
 
 ## 7. 导入相关 SQL
 

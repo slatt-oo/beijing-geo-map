@@ -19,7 +19,7 @@ func NewCategoryRepo(db *pgxpool.Pool) *CategoryRepo {
 }
 
 func (r *CategoryRepo) List(ctx context.Context) ([]model.Category, error) {
-	rows, err := r.db.Query(ctx, `SELECT id, code, name, color FROM poi_category ORDER BY sort_order`)
+	rows, err := r.db.Query(ctx, `SELECT id, code, name, color FROM poi_category ORDER BY sort_order, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list categories: %w", err)
 	}

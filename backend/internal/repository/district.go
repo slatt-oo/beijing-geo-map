@@ -60,7 +60,7 @@ SELECT c.code, c.name, count(p.id)
 FROM poi_category c
 LEFT JOIN poi p ON p.category_id = c.id AND p.district_id = $1
 GROUP BY c.id
-ORDER BY c.sort_order`
+ORDER BY c.sort_order, c.id`
 
 func (r *DistrictRepo) Get(ctx context.Context, adcode string) (model.DistrictDetail, error) {
 	var d model.DistrictDetail

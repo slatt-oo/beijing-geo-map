@@ -229,7 +229,8 @@ func TestInBBoxFiltersByEnvelopeAndCategory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InBBox: %v", err)
 	}
-	if want := []string{"清华大学", "北京大学医学部", "北京大学", "测试地铁站"}; !slices.Equal(summaryNames(pois), want) || truncated {
+	// 按 md5(id) 排序：md5('4')、md5('1')、md5('2')、md5('3') 依次以 a87f、c4ca、c81e、eccb 开头。
+	if want := []string{"测试地铁站", "清华大学", "北京大学医学部", "北京大学"}; !slices.Equal(summaryNames(pois), want) || truncated {
 		t.Fatalf("InBBox = %v (truncated %v), want %v", summaryNames(pois), truncated, want)
 	}
 	pku := pois[slices.IndexFunc(pois, func(p model.POISummary) bool { return p.Name == "北京大学" })]
@@ -254,7 +255,8 @@ func TestInBBoxReportsTruncation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InBBox: %v", err)
 	}
-	if want := []string{"清华大学", "北京大学医学部"}; !slices.Equal(summaryNames(pois), want) || !truncated {
+	// 按 md5(id) 的顺序截断，保留的是排在最前面的 id 4 和 id 1。
+	if want := []string{"测试地铁站", "清华大学"}; !slices.Equal(summaryNames(pois), want) || !truncated {
 		t.Fatalf("limit 2: got %v, truncated %v; want %v, true", summaryNames(pois), truncated, want)
 	}
 
@@ -262,7 +264,7 @@ func TestInBBoxReportsTruncation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InBBox: %v", err)
 	}
-	if want := []string{"清华大学", "北京大学医学部", "北京大学", "测试地铁站"}; !slices.Equal(summaryNames(pois), want) || truncated {
+	if want := []string{"测试地铁站", "清华大学", "北京大学医学部", "北京大学"}; !slices.Equal(summaryNames(pois), want) || truncated {
 		t.Fatalf("limit 4: got %v, truncated %v; want %v, false", summaryNames(pois), truncated, want)
 	}
 }
@@ -446,13 +448,17 @@ func TestQueriesCanUseTheirIndexes(t *testing.T) {
 	if _, err := tx.Exec(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
 		t.Fatalf("disable seqscan: %v", err)
 	}
-	for name, tc := range map[string]struct{ query, index string }{
-		"nearby": {`SELECT id FROM poi WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(116.05, 40.05), 4326)::geography, 1000)`, "poi_geog_gist"},
-		"bbox":   {`SELECT id FROM poi WHERE geom && ST_MakeEnvelope(116.0, 40.0, 116.1, 40.1, 4326)`, "poi_geom_gist"},
-		"locate": {`SELECT adcode FROM district WHERE ST_Contains(geom, ST_SetSRID(ST_MakePoint(116.05, 40.05), 4326))`, "district_geom_gist"},
-		"search": {`SELECT id FROM poi WHERE name ILIKE '%北京大学%'`, "poi_name_trgm"},
+	for name, tc := range map[string]struct {
+		query string
+		args  []any
+		index string
+	}{
+		"nearby": {repository.NearbyPOIsSQL, []any{116.05, 40.05, 1000.0, []int16(nil), 50}, "poi_geog_gist"},
+		"bbox":   {repository.PoisInBBoxSQL, []any{116.0, 40.0, 116.1, 40.1, []int16(nil), 101}, "poi_geom_gist"},
+		"locate": {repository.LocateDistrictSQL, []any{116.05, 40.05}, "district_geom_gist"},
+		"search": {repository.SearchPOIsSQL, []any{"%北京大学%", "北京大学", 10}, "poi_name_trgm"},
 	} {
-		rows, err := tx.Query(ctx, "EXPLAIN "+tc.query)
+		rows, err := tx.Query(ctx, "EXPLAIN "+tc.query, tc.args...)
 		if err != nil {
 			t.Fatalf("explain %s: %v", name, err)
 		}
