@@ -72,6 +72,7 @@ func URL(t testing.TB, name string) string {
 	return dbURL
 }
 
+// New 会清空 poi 和 district：每个测试包使用唯一的 name，并且不要和 t.Parallel 同时使用。
 func New(t testing.TB, name string) *pgxpool.Pool {
 	t.Helper()
 	dbURL := URL(t, name)

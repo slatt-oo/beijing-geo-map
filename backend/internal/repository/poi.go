@@ -27,11 +27,12 @@ FROM poi p
 JOIN poi_category c ON c.id = p.category_id
 WHERE p.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
   AND ($5::smallint[] IS NULL OR p.category_id = ANY($5))
-ORDER BY p.id
+ORDER BY md5(p.id::text), p.id
 LIMIT $6`
 
-// InBBox 返回落在 box 内的 POI，按 id 排序。categoryIDs 为 nil 或空表示不按分类过滤。
-// 多查 1 条来判断是否截断，比额外执行 count(*) 更省。
+// InBBox 返回落在 box 内的 POI。categoryIDs 为 nil 或空表示不按分类过滤。
+// 结果按 md5(id) 打散的固定顺序排列：id 按导入顺序分配，各分类在 id 上分布不均（地铁站全部排在最后），
+// 按 id 截断会让排在后面的分类整类缺失。多查 1 条来判断是否截断，比额外执行 count(*) 更省。
 func (r *POIRepo) InBBox(ctx context.Context, box model.BBox, categoryIDs []int16, limit int) ([]model.POISummary, bool, error) {
 	if len(categoryIDs) == 0 {
 		categoryIDs = nil

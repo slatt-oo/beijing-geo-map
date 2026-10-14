@@ -15,7 +15,9 @@ const (
 )
 
 type Deps struct {
-	DB Pinger
+	DB        Pinger
+	Districts DistrictService
+	POIs      POIService
 }
 
 func NewRouter(deps Deps) *gin.Engine {
@@ -35,5 +37,14 @@ func NewRouter(deps Deps) *gin.Engine {
 	})
 
 	r.GET(healthPath, healthHandler(deps.DB))
+	api := r.Group("/api/v1")
+	api.GET("/districts", listDistricts(deps.Districts))
+	api.GET("/districts/locate", locateDistrict(deps.Districts))
+	api.GET("/districts/:adcode", getDistrict(deps.Districts))
+	api.GET("/poi-categories", listCategories(deps.POIs))
+	api.GET("/pois", poisInBBox(deps.POIs))
+	api.GET("/pois/search", searchPOIs(deps.POIs))
+	api.GET("/pois/nearby", nearbyPOIs(deps.POIs))
+	api.GET("/pois/:id", getPOI(deps.POIs))
 	return r
 }
