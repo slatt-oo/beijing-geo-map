@@ -1078,7 +1078,7 @@ Expected: 四条命令都没有错误或警告。
 
 **Files:**
 - Create: `frontend/src/api/types.ts`
-- Create: `frontend/src/api/queries.ts`
+- Create: `frontend/src/api/queries.ts`、`frontend/src/api/queries.test.ts`
 - Modify: `frontend/src/api/client.ts`、`frontend/src/api/client.test.ts`（新增 `errorMessage`）
 - Create: `frontend/src/lib/categories.ts`、`frontend/src/lib/categories.test.ts`
 - Create: `frontend/src/store/useAppStore.ts`、`frontend/src/store/useAppStore.test.ts`
@@ -1088,7 +1088,7 @@ Expected: 四条命令都没有错误或警告。
 - Produces:
   - `src/api/types.ts`：`DataResponse<T>`、`Category`、`DistrictProperties`、`DistrictCollection`、`CategoryCount`、`DistrictDetail`、`POIProperties`、`POICollection`、`POIDetail`（与后端 `internal/service/types.go` 的 JSON 一一对应）
   - `src/api/client.ts`：`errorMessage(err: unknown): string`
-  - `src/api/queries.ts`：`POI_LIMIT = 5000`、`useDistricts()`、`useDistrict(adcode: string | null)`、`useCategories()`、`usePoisInBBox(bbox: BBox | null, categories: string[] | undefined | null)`、`usePoiDetail(id: number | null)`
+  - `src/api/queries.ts`：`POI_LIMIT = 5000`；查询选项工厂 `districtsQuery()`、`districtQuery(adcode)`、`categoriesQuery()`、`poisQuery(bbox, categories)`、`poiDetailQuery(id)`（`queryOptions`，可以在 Node 中测试）；hooks `useDistricts()`、`useDistrict(adcode: string | null)`、`useCategories()`、`usePoisInBBox(bbox: BBox | null, categories: string[] | undefined | null)`、`usePoiDetail(id: number | null)`。分类全部关闭（`categories === null`）时 `usePoisInBBox` 不请求，也不沿用上一次的结果
   - `src/lib/categories.ts`：`FALLBACK_POI_COLOR`、`categoriesParam(allCodes: string[], hidden: string[]): string[] | undefined | null`、`categoryColorExpression(categories: Category[]): ExpressionSpecification | string`
   - `src/store/useAppStore.ts`：`useAppStore`，状态 `hiddenCategories: string[]`、`selectedDistrict: string | null`、`activePoiId: number | null`、`errorMessage: string | null`，动作 `toggleCategory(code)`、`selectDistrict(adcode | null)`、`openPoi(id | null)`、`showError(message)`、`dismissError()`
 
@@ -1165,6 +1165,79 @@ describe('useAppStore', () => {
 })
 ```
 
+创建 `frontend/src/api/queries.test.ts`（TanStack Query 的 `QueryClient`、`QueryObserver` 不依赖 React，可以直接在 Node 中运行）：
+
+```ts
+import { QueryClient, QueryObserver, skipToken } from '@tanstack/react-query'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { BBox } from '../lib/bbox'
+import { districtQuery, POI_LIMIT, poiDetailQuery, poisQuery } from './queries'
+
+const box: BBox = [116.3, 39.9, 116.4, 40]
+const emptyCollection = { type: 'FeatureCollection', features: [], truncated: false }
+
+function stubFetch(body: unknown) {
+  const fetchMock = vi.fn<typeof fetch>(
+    async () => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('poisQuery', () => {
+  it('keeps all, none and a category list in separate cache entries', () => {
+    const keys = [poisQuery(box, undefined), poisQuery(box, null), poisQuery(box, ['park'])].map((q) =>
+      JSON.stringify(q.queryKey),
+    )
+    expect(new Set(keys).size).toBe(3)
+  })
+
+  it('skips the request without a bbox or when every category is hidden', () => {
+    expect(poisQuery(null, undefined).queryFn).toBe(skipToken)
+    expect(poisQuery(box, null).queryFn).toBe(skipToken)
+  })
+
+  it('requests the bbox, the categories and the fixed limit', async () => {
+    const fetchMock = stubFetch(emptyCollection)
+
+    await new QueryClient().fetchQuery(poisQuery(box, ['park', 'university']))
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `/api/v1/pois?bbox=116.3%2C39.9%2C116.4%2C40&categories=park%2Cuniversity&limit=${POI_LIMIT}`,
+    )
+  })
+
+  it('does not fall back to the previous result when every category is hidden', async () => {
+    stubFetch(emptyCollection)
+    const observer = new QueryObserver(new QueryClient(), poisQuery(box, undefined))
+    const unsubscribe = observer.subscribe(() => {})
+    await vi.waitFor(() => expect(observer.getCurrentResult().isSuccess).toBe(true))
+
+    observer.setOptions(poisQuery(box, null))
+
+    expect(observer.getCurrentResult().data).toBeUndefined()
+    unsubscribe()
+  })
+})
+
+describe('detail queries', () => {
+  it('unwrap the data envelope', async () => {
+    stubFetch({ data: { id: 42, name: '北京大学' } })
+
+    await expect(new QueryClient().fetchQuery(poiDetailQuery(42))).resolves.toEqual({ id: 42, name: '北京大学' })
+  })
+
+  it('skip the request without an id', () => {
+    expect(poiDetailQuery(null).queryFn).toBe(skipToken)
+    expect(districtQuery(null).queryFn).toBe(skipToken)
+  })
+})
+```
+
 在 `frontend/src/api/client.test.ts` 中，把第二行的导入改为：
 
 ```ts
@@ -1188,8 +1261,8 @@ describe('errorMessage', () => {
 
 - [ ] **Step 2: 运行测试，确认失败**
 
-Run: `cd frontend && npx vitest run src/lib/categories.test.ts src/store/useAppStore.test.ts src/api/client.test.ts`
-Expected: FAIL，提示无法解析 `./categories`、`./useAppStore`，以及 `errorMessage` 不存在。
+Run: `cd frontend && npx vitest run src/lib/categories.test.ts src/store/useAppStore.test.ts src/api/client.test.ts src/api/queries.test.ts`
+Expected: FAIL，提示无法解析 `./categories`、`./useAppStore`、`./queries`，以及 `errorMessage` 不存在。
 
 - [ ] **Step 3: 实现接口类型、`errorMessage` 和分类工具**
 
@@ -1317,10 +1390,10 @@ export const useAppStore = create<AppState>()((set) => ({
 }))
 ```
 
-创建 `frontend/src/api/queries.ts`：
+创建 `frontend/src/api/queries.ts`（每个查询先定义成 `queryOptions` 工厂，hook 只调用 `useQuery`，这样查询键、跳过条件和请求参数都能在 Node 中测试）：
 
 ```ts
-import { keepPreviousData, skipToken, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions, skipToken, useQuery } from '@tanstack/react-query'
 import { bboxParam, type BBox } from '../lib/bbox'
 import { apiGet } from './client'
 import type { Category, DataResponse, DistrictCollection, DistrictDetail, POICollection, POIDetail } from './types'
@@ -1328,16 +1401,16 @@ import type { Category, DataResponse, DistrictCollection, DistrictDetail, POICol
 // 当前快照约 4100 个 POI：按接口上限请求时，整个北京也不会被截断，聚合数字才准确。
 export const POI_LIMIT = 5000
 
-export function useDistricts() {
-  return useQuery({
+export function districtsQuery() {
+  return queryOptions({
     queryKey: ['districts'],
     queryFn: ({ signal }) => apiGet<DistrictCollection>('/districts', undefined, signal),
     staleTime: Infinity,
   })
 }
 
-export function useDistrict(adcode: string | null) {
-  return useQuery({
+export function districtQuery(adcode: string | null) {
+  return queryOptions({
     queryKey: ['district', adcode],
     queryFn:
       adcode === null
@@ -1347,29 +1420,29 @@ export function useDistrict(adcode: string | null) {
   })
 }
 
-export function useCategories() {
-  return useQuery({
+export function categoriesQuery() {
+  return queryOptions({
     queryKey: ['poi-categories'],
     queryFn: ({ signal }) => apiGet<DataResponse<Category[]>>('/poi-categories', undefined, signal).then((r) => r.data),
     staleTime: Infinity,
   })
 }
 
-// categories 为 undefined 表示全部分类；为 null 表示分类全部关闭，此时不请求。
-export function usePoisInBBox(bbox: BBox | null, categories: string[] | undefined | null) {
-  return useQuery({
+// categories 为 undefined 表示全部分类；为 null 表示分类全部关闭：此时不请求，也不沿用上一次的结果。
+export function poisQuery(bbox: BBox | null, categories: string[] | undefined | null) {
+  return queryOptions({
     queryKey: ['pois', bbox && bboxParam(bbox), categories === null ? 'none' : (categories ?? 'all')],
     queryFn:
       bbox === null || categories === null
         ? skipToken
         : ({ signal }) => apiGet<POICollection>('/pois', { bbox: bboxParam(bbox), categories, limit: POI_LIMIT }, signal),
-    placeholderData: keepPreviousData,
+    placeholderData: categories === null ? undefined : keepPreviousData,
     staleTime: 5 * 60 * 1000,
   })
 }
 
-export function usePoiDetail(id: number | null) {
-  return useQuery({
+export function poiDetailQuery(id: number | null) {
+  return queryOptions({
     queryKey: ['poi', id],
     queryFn:
       id === null
@@ -1378,15 +1451,35 @@ export function usePoiDetail(id: number | null) {
     staleTime: 5 * 60 * 1000,
   })
 }
+
+export function useDistricts() {
+  return useQuery(districtsQuery())
+}
+
+export function useDistrict(adcode: string | null) {
+  return useQuery(districtQuery(adcode))
+}
+
+export function useCategories() {
+  return useQuery(categoriesQuery())
+}
+
+export function usePoisInBBox(bbox: BBox | null, categories: string[] | undefined | null) {
+  return useQuery(poisQuery(bbox, categories))
+}
+
+export function usePoiDetail(id: number | null) {
+  return useQuery(poiDetailQuery(id))
+}
 ```
 
-查询 hooks 只是 `useQuery` 的薄封装，需要渲染 React 才能测试，本阶段不写单元测试；它们的参数逻辑已经放在 `categoriesParam`、`bboxParam` 和 `buildUrl` 中并有测试覆盖。
+`poisQuery` 在分类全部关闭时把 `placeholderData` 设为 `undefined`：TanStack Query 不管查询是否被跳过都会使用占位数据，沿用 `keepPreviousData` 会把关闭之前的 POI 原样返回。
 
 - [ ] **Step 5: 运行全部前端检查并提交**
 
 ```bash
 cd frontend && npm run lint && npm run typecheck && npm test && npm run build && cd ..
-git add frontend/src/api/types.ts frontend/src/api/queries.ts frontend/src/api/client.ts frontend/src/api/client.test.ts \
+git add frontend/src/api/types.ts frontend/src/api/queries.ts frontend/src/api/queries.test.ts frontend/src/api/client.ts frontend/src/api/client.test.ts \
   frontend/src/lib/categories.ts frontend/src/lib/categories.test.ts \
   frontend/src/store/useAppStore.ts frontend/src/store/useAppStore.test.ts
 git commit -m "feat(frontend): add API types, query hooks, category helpers and app store"
@@ -2101,14 +2194,13 @@ export function PoiLayer() {
     if (categories) map.setPaintProperty(LAYER.poiPoint, 'circle-color', categoryColorExpression(categories))
   }, [map, categories])
 
-  const collection = requested === null ? undefined : data
-  const display = useMemo(() => (collection ? transformCollection(collection, toDisplay) : EMPTY_COLLECTION), [collection])
+  const display = useMemo(() => (data ? transformCollection(data, toDisplay) : EMPTY_COLLECTION), [data])
 
   useEffect(() => {
     map.getSource<GeoJSONSource>(SOURCE.pois)?.setData(display)
   }, [map, display])
 
-  if (!collection?.truncated) return null
+  if (!data?.truncated) return null
   return (
     <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-full bg-amber-50 px-4 py-1.5 text-sm text-amber-800 shadow ring-1 ring-amber-200">
       当前范围数据过多，请放大地图
@@ -2117,7 +2209,7 @@ export function PoiLayer() {
 }
 ```
 
-`requested === null` 表示分类全部关闭：此时不请求，并且不能沿用 `keepPreviousData` 留下的旧数据，所以直接用空集合。
+分类全部关闭时 `usePoisInBBox` 不请求，也不沿用上一次的结果，`data` 为 `undefined`，图层随之清空。
 
 - [ ] **Step 2: POI 详情卡片与弹窗**
 
@@ -2437,7 +2529,7 @@ Expected: 四条命令都没有错误或警告。
 替换为：
 
 ```text
-| Vitest 单元测试 | `lib/coord.ts`（读取同一份共享样例）、`lib/geojson.ts` 的递归坐标转换、`lib/bbox.ts`、`lib/tiles.ts`、`lib/categories.ts`、`lib/format.ts`、`store/useAppStore.ts`、`api/client.ts` 的参数拼接和错误解析。地图图层组件依赖 WebGL，不写单元测试，逻辑尽量放进上面这些纯函数 |
+| Vitest 单元测试 | `lib/coord.ts`（读取同一份共享样例）、`lib/geojson.ts` 的递归坐标转换、`lib/bbox.ts`、`lib/tiles.ts`、`lib/categories.ts`、`lib/format.ts`、`store/useAppStore.ts`、`api/client.ts` 的参数拼接和错误解析、`api/queries.ts` 的查询键和跳过条件（用 TanStack Query 的 `QueryObserver` 在 Node 中运行）。地图图层组件依赖 WebGL，不写单元测试，逻辑尽量放进上面这些纯函数 |
 ```
 
 - [ ] **Step 8: README 状态说明**
