@@ -44,6 +44,10 @@ export async function apiGet<T>(path: string, params?: Record<string, QueryValue
   return (await res.json()) as T
 }
 
+export function errorMessage(err: unknown): string {
+  return err instanceof ApiError ? err.message : '请求失败，请稍后重试'
+}
+
 async function toApiError(res: Response): Promise<ApiError> {
   try {
     const body = (await res.json()) as { error?: { code?: unknown; message?: unknown } }
