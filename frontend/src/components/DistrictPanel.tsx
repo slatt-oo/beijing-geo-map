@@ -6,7 +6,7 @@ import { useAppStore } from '../store/useAppStore'
 export function DistrictPanel() {
   const adcode = useAppStore((s) => s.selectedDistrict)
   const selectDistrict = useAppStore((s) => s.selectDistrict)
-  const { data: detail } = useDistrict(adcode)
+  const { data: detail, isError } = useDistrict(adcode)
   const { data: categories } = useCategories()
 
   if (adcode === null) return null
@@ -14,7 +14,7 @@ export function DistrictPanel() {
   return (
     <aside className="absolute left-4 top-4 z-10 w-72 rounded-lg bg-white/95 p-4 shadow-lg ring-1 ring-slate-200">
       <div className="flex items-start justify-between gap-2">
-        <h2 className="text-lg font-semibold text-slate-900">{detail?.name ?? '加载中…'}</h2>
+        <h2 className="text-lg font-semibold text-slate-900">{detail?.name ?? (isError ? '加载失败' : '加载中…')}</h2>
         <button
           type="button"
           aria-label="关闭区详情"

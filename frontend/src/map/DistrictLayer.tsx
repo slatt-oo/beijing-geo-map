@@ -36,6 +36,7 @@ export function DistrictLayer() {
     const tooltip = new Popup({ closeButton: false, closeOnClick: false, offset: 14, className: 'district-tooltip' })
     let hovered: string | null = null
     const setHovered = (adcode: string | null) => {
+      if (adcode === hovered) return
       if (hovered) map.setFeatureState({ source: SOURCE.districts, id: hovered }, { hover: false })
       hovered = adcode
       if (hovered) map.setFeatureState({ source: SOURCE.districts, id: hovered }, { hover: true })
@@ -44,7 +45,8 @@ export function DistrictLayer() {
       const feature = e.features?.[0]
       if (!feature) return
       setHovered(String(feature.properties.adcode))
-      tooltip.setLngLat(e.lngLat).setText(String(feature.properties.name)).addTo(map)
+      tooltip.setLngLat(e.lngLat).setText(String(feature.properties.name))
+      if (!tooltip.isOpen()) tooltip.addTo(map)
     })
     const leave = map.on('mouseleave', LAYER.districtFill, () => {
       setHovered(null)
