@@ -448,6 +448,7 @@ func TestQueriesCanUseTheirIndexes(t *testing.T) {
 	if _, err := tx.Exec(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
 		t.Fatalf("disable seqscan: %v", err)
 	}
+	// 通用计划不看参数值，分类过滤条件 `$n IS NULL OR ...` 会留在计划里；带分类参数的定制计划可能合理地改用 poi_category_id_idx，所以不单独断言。
 	for name, tc := range map[string]struct {
 		query string
 		args  []any
@@ -469,7 +470,30 @@ func TestQueriesCanUseTheirIndexes(t *testing.T) {
 		if plan := strings.Join(lines, "\n"); !strings.Contains(plan, tc.index) {
 			t.Errorf("%s query does not use %s:\n%s", name, tc.index, plan)
 		}
+		generic, err := genericPlan(ctx, tx, tc.query)
+		if err != nil {
+			t.Fatalf("explain generic %s: %v", name, err)
+		}
+		if !strings.Contains(generic, tc.index) {
+			t.Errorf("%s query's generic plan does not use %s:\n%s", name, tc.index, generic)
+		}
 	}
+}
+
+// genericPlan 返回不依赖参数值的通用计划：pgx 会缓存预编译语句，同一条 SQL 执行多次后 PostgreSQL 可能改用通用计划。
+// EXPLAIN (GENERIC_PLAN) 需要 PostgreSQL 16，且语句里的 $n 不能绑定参数，只能用 pgconn 走简单查询协议。
+func genericPlan(ctx context.Context, tx pgx.Tx, query string) (string, error) {
+	results, err := tx.Conn().PgConn().Exec(ctx, "EXPLAIN (GENERIC_PLAN) "+query).ReadAll()
+	if err != nil {
+		return "", err
+	}
+	var lines []string
+	for _, r := range results {
+		for _, row := range r.Rows {
+			lines = append(lines, string(row[0]))
+		}
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 func abs(n int) int {

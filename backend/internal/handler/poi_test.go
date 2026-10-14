@@ -142,6 +142,16 @@ func TestNearbyPOIsAppliesDefaults(t *testing.T) {
 	}
 }
 
+func TestNearbyPOIsPassesRadiusCategoriesAndLimit(t *testing.T) {
+	p := &fakePOIService{}
+
+	get(t, newTestRouter(&fakeDistrictService{}, p), "/api/v1/pois/nearby?lng=116.3&lat=39.99&radius=2000&categories=park&limit=10", nil)
+
+	if got := p.gotNearby; got.RadiusM != 2000 || got.Limit != 10 || !slices.Equal(got.Categories, []string{"park"}) {
+		t.Fatalf("service got %+v", got)
+	}
+}
+
 func TestNearbyPOIsValidatesParams(t *testing.T) {
 	p := &fakePOIService{}
 	r := newTestRouter(&fakeDistrictService{}, p)
@@ -165,9 +175,13 @@ func TestLocationQueriesAreRedactedInAccessLog(t *testing.T) {
 
 	get(t, r, "/api/v1/pois/nearby?lng=116.391&lat=39.907", nil)
 	get(t, r, "/api/v1/districts/locate?lng=116.391&lat=39.907", nil)
+	get(t, r, "/api/v1/pois/search?q=abc", nil)
 
 	if strings.Contains(logs.String(), "116.391") || strings.Count(logs.String(), `"query":"[redacted]"`) != 2 {
 		t.Fatalf("location must be redacted from the access log:\n%s", logs)
+	}
+	if !strings.Contains(logs.String(), `"query":"q=abc"`) {
+		t.Fatalf("other queries must stay in the access log:\n%s", logs)
 	}
 }
 
