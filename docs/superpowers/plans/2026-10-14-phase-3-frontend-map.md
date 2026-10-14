@@ -1929,6 +1929,7 @@ export function DistrictLayer() {
     const tooltip = new Popup({ closeButton: false, closeOnClick: false, offset: 14, className: 'district-tooltip' })
     let hovered: string | null = null
     const setHovered = (adcode: string | null) => {
+      if (adcode === hovered) return
       if (hovered) map.setFeatureState({ source: SOURCE.districts, id: hovered }, { hover: false })
       hovered = adcode
       if (hovered) map.setFeatureState({ source: SOURCE.districts, id: hovered }, { hover: true })
@@ -1937,7 +1938,8 @@ export function DistrictLayer() {
       const feature = e.features?.[0]
       if (!feature) return
       setHovered(String(feature.properties.adcode))
-      tooltip.setLngLat(e.lngLat).setText(String(feature.properties.name)).addTo(map)
+      tooltip.setLngLat(e.lngLat).setText(String(feature.properties.name))
+      if (!tooltip.isOpen()) tooltip.addTo(map)
     })
     const leave = map.on('mouseleave', LAYER.districtFill, () => {
       setHovered(null)
@@ -2045,7 +2047,7 @@ import { useAppStore } from '../store/useAppStore'
 export function DistrictPanel() {
   const adcode = useAppStore((s) => s.selectedDistrict)
   const selectDistrict = useAppStore((s) => s.selectDistrict)
-  const { data: detail } = useDistrict(adcode)
+  const { data: detail, isError } = useDistrict(adcode)
   const { data: categories } = useCategories()
 
   if (adcode === null) return null
@@ -2053,7 +2055,7 @@ export function DistrictPanel() {
   return (
     <aside className="absolute left-4 top-4 z-10 w-72 rounded-lg bg-white/95 p-4 shadow-lg ring-1 ring-slate-200">
       <div className="flex items-start justify-between gap-2">
-        <h2 className="text-lg font-semibold text-slate-900">{detail?.name ?? '加载中…'}</h2>
+        <h2 className="text-lg font-semibold text-slate-900">{detail?.name ?? (isError ? '加载失败' : '加载中…')}</h2>
         <button
           type="button"
           aria-label="关闭区详情"
@@ -2087,10 +2089,12 @@ export function DistrictPanel() {
 ```css
 
 /* 悬停提示跟随鼠标，不能挡住下面的地图，否则鼠标移到提示上会触发 mouseleave 导致闪烁。 */
-.maplibregl-popup.district-tooltip {
+.maplibregl-popup.district-tooltip .maplibregl-popup-content {
   pointer-events: none;
 }
 ```
+
+`maplibre-gl.css` 已经给弹窗外层设了 `pointer-events: none`，真正会挡住鼠标的是内容框（`.maplibregl-popup-content` 是 `pointer-events: auto`），所以规则要写在内容框上。
 
 - [ ] **Step 4: 页面组合**
 
