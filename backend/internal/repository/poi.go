@@ -31,8 +31,8 @@ ORDER BY md5(p.id::text), p.id
 LIMIT $6`
 
 // InBBox 返回落在 box 内的 POI。categoryIDs 为 nil 或空表示不按分类过滤。
-// 结果按 md5(id) 打散的固定顺序排列：id 按导入顺序分配，同一分类的 id 连在一起，
-// 按 id 截断会让排在后面的分类（例如地铁站）整类缺失。多查 1 条来判断是否截断，比额外执行 count(*) 更省。
+// 结果按 md5(id) 打散的固定顺序排列：id 按导入顺序分配，各分类在 id 上分布不均（地铁站全部排在最后），
+// 按 id 截断会让排在后面的分类整类缺失。多查 1 条来判断是否截断，比额外执行 count(*) 更省。
 func (r *POIRepo) InBBox(ctx context.Context, box model.BBox, categoryIDs []int16, limit int) ([]model.POISummary, bool, error) {
 	if len(categoryIDs) == 0 {
 		categoryIDs = nil
