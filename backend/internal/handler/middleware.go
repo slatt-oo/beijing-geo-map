@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"time"
 
@@ -23,11 +24,24 @@ func requestLogger() gin.HandlerFunc {
 		slog.Log(c.Request.Context(), level, "request",
 			"method", c.Request.Method,
 			"path", c.Request.URL.Path,
-			"query", c.Request.URL.RawQuery,
+			"query", loggedQuery(c.Request.URL),
 			"status", c.Writer.Status(),
 			"latency_ms", time.Since(start).Milliseconds(),
 		)
 	}
+}
+
+// 这两个接口的查询参数是用户的精确位置，不写进访问日志。
+var locationQueryPaths = map[string]bool{
+	"/api/v1/districts/locate": true,
+	"/api/v1/pois/nearby":      true,
+}
+
+func loggedQuery(u *url.URL) string {
+	if locationQueryPaths[u.Path] && u.RawQuery != "" {
+		return "[redacted]"
+	}
+	return u.RawQuery
 }
 
 func recovery() gin.HandlerFunc {
