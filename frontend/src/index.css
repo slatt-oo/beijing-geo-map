@@ -6,3 +6,8 @@ body,
   height: 100%;
   margin: 0;
 }
+
+/* 悬停提示跟随鼠标，不能挡住下面的地图，否则鼠标移到提示上会触发 mouseleave 导致闪烁。 */
+.maplibregl-popup.district-tooltip {
+  pointer-events: none;
+}
