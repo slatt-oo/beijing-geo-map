@@ -35,6 +35,7 @@ export function MapView({ children }: { children?: ReactNode }) {
       maxBounds: displayBounds(REGION_BBOX),
       maxZoom: 18,
       hash: true,
+      locale: { 'Popup.Close': '关闭' },
       attributionControl: { compact: false },
     })
     // 用 style.load 而不是 load：load 要等首屏所有底图瓦片加载完才触发，接口请求会排在瓦片之后。
