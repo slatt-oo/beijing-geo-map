@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { locate } from './locate'
+import { LOCATE_GIVE_UP_MS, locate } from './locate'
 import { useAppStore } from './useAppStore'
 
 type Request = { success: PositionCallback; failure?: PositionErrorCallback | null }
@@ -28,13 +28,13 @@ describe('locate', () => {
   it('stores the position and stops locating', async () => {
     const requests: Request[] = []
     const done = locate(pendingGeolocation(requests))
-    expect(state().locating).toBe(true)
+    expect(state().locateRequest).not.toBeNull()
 
     requests[0].success(position)
     await done
 
     expect(state().myLocation).toEqual({ lng: 116.31, lat: 39.99, accuracy: 25 })
-    expect(state().locating).toBe(false)
+    expect(state().locateRequest).toBeNull()
   })
 
   it('switches to picking on the map when locating fails', async () => {
@@ -45,7 +45,7 @@ describe('locate', () => {
     await done
 
     expect(state().mode).toBe('pickLocation')
-    expect(state().locating).toBe(false)
+    expect(state().locateRequest).toBeNull()
   })
 
   it('ignores another request while one is in flight', async () => {
@@ -58,6 +58,44 @@ describe('locate', () => {
     expect(requests).toHaveLength(1)
     requests[0].failure?.(denied)
     await first
+  })
+
+  it('ignores a late failure once the user has picked a location', async () => {
+    const requests: Request[] = []
+    const done = locate(pendingGeolocation(requests))
+
+    state().setMyLocation({ lng: 116.4, lat: 39.9, accuracy: null })
+    requests[0].failure?.(denied)
+    await done
+
+    expect(state().mode).toBe('normal')
+    expect(state().myLocation).toEqual({ lng: 116.4, lat: 39.9, accuracy: null })
+  })
+
+  it('ignores a late position once picking was cancelled', async () => {
+    state().startPickLocation()
+    const requests: Request[] = []
+    const done = locate(pendingGeolocation(requests))
+
+    state().cancelPickLocation()
+    requests[0].success(position)
+    await done
+
+    expect(state().myLocation).toBeNull()
+  })
+
+  it('gives up when the browser never answers', async () => {
+    vi.useFakeTimers()
+    try {
+      const done = locate(pendingGeolocation([]))
+
+      await vi.advanceTimersByTimeAsync(LOCATE_GIVE_UP_MS)
+      await done
+
+      expect(state().mode).toBe('pickLocation')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('switches to picking when the browser has no geolocation', async () => {

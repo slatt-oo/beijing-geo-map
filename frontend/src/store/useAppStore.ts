@@ -20,7 +20,8 @@ export type AppState = {
   activePoiId: number | null
   notice: Notice | null
   mode: AppMode
-  locating: boolean
+  // 正在等待的浏览器定位请求。点选位置或取消点选时清空，这次请求的结果随之作废。
+  locateRequest: object | null
   myLocation: MyLocation | null
   nearby: Nearby | null
   nearbyAfterLocate: boolean
@@ -31,7 +32,7 @@ export type AppState = {
   showError: (message: string) => void
   showInfo: (message: string) => void
   dismissNotice: () => void
-  startLocating: () => void
+  startLocating: (request: object) => void
   startPickLocation: () => void
   cancelPickLocation: () => void
   setMyLocation: (location: MyLocation) => void
@@ -49,7 +50,7 @@ export const useAppStore = create<AppState>()((set) => ({
   activePoiId: null,
   notice: null,
   mode: 'normal',
-  locating: false,
+  locateRequest: null,
   myLocation: null,
   nearby: null,
   nearbyAfterLocate: false,
@@ -67,15 +68,15 @@ export const useAppStore = create<AppState>()((set) => ({
   showError: (message) => set({ notice: { tone: 'error', message } }),
   showInfo: (message) => set({ notice: { tone: 'info', message } }),
   dismissNotice: () => set({ notice: null }),
-  startLocating: () => set({ locating: true }),
-  startPickLocation: () => set({ mode: 'pickLocation', locating: false }),
-  cancelPickLocation: () => set({ mode: 'normal', nearbyAfterLocate: false }),
+  startLocating: (request) => set({ locateRequest: request }),
+  startPickLocation: () => set({ mode: 'pickLocation', locateRequest: null }),
+  cancelPickLocation: () => set({ mode: 'normal', nearbyAfterLocate: false, locateRequest: null }),
   // 点击「附近」时如果还没有位置，会先定位；定位（或点选）完成后接着打开附近查询。
   setMyLocation: (location) =>
     set((state) => ({
       myLocation: location,
       mode: 'normal',
-      locating: false,
+      locateRequest: null,
       nearbyAfterLocate: false,
       ...(state.nearbyAfterLocate
         ? {

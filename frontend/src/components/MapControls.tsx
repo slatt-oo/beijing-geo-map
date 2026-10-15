@@ -5,7 +5,7 @@ const BUTTON_CLASS =
   'pointer-events-auto rounded-lg bg-white/95 px-3 py-2 text-sm font-medium text-slate-800 shadow-lg ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-wait disabled:text-slate-400 disabled:hover:bg-white/95'
 
 export function MapControls() {
-  const locating = useAppStore((s) => s.locating)
+  const locating = useAppStore((s) => s.locateRequest !== null)
 
   const searchNearby = () => {
     const { myLocation, openNearby, requestNearbyAfterLocate } = useAppStore.getState()

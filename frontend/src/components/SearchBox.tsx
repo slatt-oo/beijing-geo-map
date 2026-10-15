@@ -21,8 +21,10 @@ export function SearchBox() {
   const { data: categories } = useCategories()
 
   const colors = new Map(categories?.map((c) => [c.code, c.color]))
-  const results = query === '' ? [] : (hits ?? [])
-  const showDropdown = open && text.trim() !== '' && query !== '' && hits !== undefined
+  // 清空输入后的 300ms 内 query 还是旧值，这时不能再用键盘选中旧结果。
+  const hasText = text.trim() !== ''
+  const results = hasText && query !== '' ? (hits ?? []) : []
+  const showDropdown = open && hasText && query !== '' && hits !== undefined
   // 新结果可能比旧结果少，键盘选中的位置超出范围时视为没有选中。
   const activeIndex = active < results.length ? active : -1
 
