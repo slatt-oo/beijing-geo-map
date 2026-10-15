@@ -50,13 +50,17 @@ export function DistrictLayer() {
       tooltip.setLngLat(e.lngLat)
       if (!tooltip.isOpen()) tooltip.addTo(map)
     })
-    const leave = map.on('mouseleave', LAYER.districtFill, () => {
+    const hide = () => {
       setHovered(null)
       tooltip.remove()
-    })
+    }
+    const leave = map.on('mouseleave', LAYER.districtFill, hide)
+    // 地图飞到别处时鼠标没动，提示会停在原来的坐标上；等下一次 mousemove 再显示。
+    const moveStart = map.on('movestart', hide)
     return () => {
       move.unsubscribe()
       leave.unsubscribe()
+      moveStart.unsubscribe()
       setHovered(null)
       tooltip.remove()
     }

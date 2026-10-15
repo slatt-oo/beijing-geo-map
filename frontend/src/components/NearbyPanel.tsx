@@ -6,6 +6,7 @@ import { formatDistance } from '../lib/format'
 import { focusPoi } from '../map/focus'
 import { useMap } from '../map/MapView'
 import { NEARBY_RADII, useAppStore } from '../store/useAppStore'
+import { CategoryDot } from './CategoryDot'
 
 export function NearbyPanel() {
   const map = useMap()
@@ -78,10 +79,7 @@ export function NearbyPanel() {
               onClick={() => focusPoi(map, f.properties.id, f.geometry.coordinates as LngLat)}
               className="flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm hover:bg-slate-100"
             >
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: colors.get(f.properties.category) ?? FALLBACK_POI_COLOR }}
-              />
+              <CategoryDot color={colors.get(f.properties.category) ?? FALLBACK_POI_COLOR} />
               <span className="flex-1 truncate text-slate-800">{f.properties.name}</span>
               <span className="shrink-0 tabular-nums text-slate-500">{formatDistance(f.properties.distance_m)}</span>
             </button>

@@ -1,4 +1,5 @@
 import type { POIDetail } from '../api/types'
+import { CategoryDot } from './CategoryDot'
 
 export function PoiDetailCard({ poi }: { poi: POIDetail }) {
   return (
@@ -8,7 +9,7 @@ export function PoiDetailCard({ poi }: { poi: POIDetail }) {
         {poi.name_en && <p className="text-xs text-slate-500">{poi.name_en}</p>}
       </div>
       <p className="flex items-center gap-1.5">
-        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: poi.category.color }} />
+        <CategoryDot color={poi.category.color} />
         {poi.category.name}
       </p>
       <p>所在区：{poi.district ? poi.district.name : '不在区界数据范围内'}</p>

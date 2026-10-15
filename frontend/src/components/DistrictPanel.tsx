@@ -2,6 +2,7 @@ import { useCategories, useDistrict } from '../api/queries'
 import { FALLBACK_POI_COLOR } from '../lib/categories'
 import { formatArea } from '../lib/format'
 import { useAppStore } from '../store/useAppStore'
+import { CategoryDot } from './CategoryDot'
 
 export function DistrictPanel() {
   const adcode = useAppStore((s) => s.selectedDistrict)
@@ -39,7 +40,7 @@ export function DistrictPanel() {
           <ul className="mt-3 space-y-1.5">
             {detail.poi_counts.map((c) => (
               <li key={c.code} className="flex items-center gap-2 text-sm">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors.get(c.code) ?? FALLBACK_POI_COLOR }} />
+                <CategoryDot color={colors.get(c.code) ?? FALLBACK_POI_COLOR} />
                 <span className="flex-1 text-slate-700">{c.name}</span>
                 <span className="tabular-nums text-slate-900">{c.count}</span>
               </li>

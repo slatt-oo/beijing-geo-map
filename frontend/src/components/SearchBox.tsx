@@ -6,6 +6,7 @@ import { FALLBACK_POI_COLOR } from '../lib/categories'
 import { MAX_QUERY_LENGTH, toSearchTerm } from '../lib/search'
 import { focusPoi } from '../map/focus'
 import { useMap } from '../map/MapView'
+import { CategoryDot } from './CategoryDot'
 
 const SEARCH_DEBOUNCE_MS = 300
 
@@ -25,6 +26,8 @@ export function SearchBox() {
   const hasText = text.trim() !== ''
   const results = hasText && query !== '' ? (hits ?? []) : []
   const showDropdown = open && hasText && query !== '' && hits !== undefined
+  // 防抖的 300ms 内 query 还是上一个词，下拉框里是上一个词的结果；这时没有结果不能说「没有找到」。
+  const searching = isFetching || query !== toSearchTerm(text)
   // 新结果可能比旧结果少，键盘选中的位置超出范围时视为没有选中。
   const activeIndex = active < results.length ? active : -1
 
@@ -87,7 +90,7 @@ export function SearchBox() {
           className="absolute left-0 right-0 top-full z-20 mt-1 max-h-96 overflow-y-auto rounded-lg bg-white py-1 shadow-lg ring-1 ring-slate-200"
         >
           {results.length === 0 && (
-            <li className="px-3 py-2 text-sm text-slate-500">{isFetching ? '搜索中…' : '没有找到相关地点'}</li>
+            <li className="px-3 py-2 text-sm text-slate-500">{searching ? '搜索中…' : '没有找到相关地点'}</li>
           )}
           {results.map((hit, i) => (
             <li
@@ -103,10 +106,7 @@ export function SearchBox() {
               onMouseEnter={() => setActive(i)}
               className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm ${i === activeIndex ? 'bg-slate-100' : ''}`}
             >
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: colors.get(hit.category) ?? FALLBACK_POI_COLOR }}
-              />
+              <CategoryDot color={colors.get(hit.category) ?? FALLBACK_POI_COLOR} />
               <span className="flex-1 truncate text-slate-900">{hit.name}</span>
               {hit.district_name && <span className="shrink-0 text-xs text-slate-500">{hit.district_name}</span>}
             </li>
