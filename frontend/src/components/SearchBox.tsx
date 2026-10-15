@@ -26,8 +26,9 @@ export function SearchBox() {
   const hasText = text.trim() !== ''
   const results = hasText && query !== '' ? (hits ?? []) : []
   const showDropdown = open && hasText && query !== '' && hits !== undefined
-  // 防抖的 300ms 内 query 还是上一个词，下拉框里是上一个词的结果；这时没有结果不能说「没有找到」。
-  const searching = isFetching || query !== toSearchTerm(text)
+  // 防抖的 300ms 内 query 还是上一个词，下拉框里是上一个词的结果：这时没有结果不能说「没有找到」，回车也不能选中它们。
+  const pending = query !== toSearchTerm(text)
+  const searching = isFetching || pending
   // 新结果可能比旧结果少，键盘选中的位置超出范围时视为没有选中。
   const activeIndex = active < results.length ? active : -1
 
@@ -49,7 +50,7 @@ export function SearchBox() {
     } else if (e.key === 'ArrowUp' && results.length > 0) {
       e.preventDefault()
       setActive(activeIndex <= 0 ? results.length - 1 : activeIndex - 1)
-    } else if (e.key === 'Enter' && results.length > 0) {
+    } else if (e.key === 'Enter' && results.length > 0 && !pending) {
       e.preventDefault()
       choose(results[Math.max(activeIndex, 0)])
     } else if (e.key === 'Escape') {

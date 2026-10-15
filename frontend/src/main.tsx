@@ -2,6 +2,7 @@ import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-qu
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { errorMessage, isRetryable, shouldRetry } from './api/client'
+import { isPoiDetailQuery } from './api/queries'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { useAppStore } from './store/useAppStore'
@@ -9,7 +10,10 @@ import './index.css'
 
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
-    onError: (error) => useAppStore.getState().showError(errorMessage(error), isRetryable(error) ? retryFailed : undefined),
+    onError: (error, query) =>
+      useAppStore
+        .getState()
+        .showError(errorMessage(error), isRetryable(error) && !isPoiDetailQuery(query.queryKey) ? retryFailed : undefined),
   }),
   defaultOptions: {
     queries: { retry: shouldRetry, refetchOnWindowFocus: false },

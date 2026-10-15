@@ -2,7 +2,7 @@ import type { GeoJSONSource, Map as MaplibreMap } from 'maplibre-gl'
 import { useEffect, useMemo, useState } from 'react'
 import { useCategories, usePoisInBBox } from '../api/queries'
 import { toData, toDisplay } from '../config'
-import { useDebounce } from '../hooks/useDebounce'
+import { useDelayedFlag } from '../hooks/useDelayedFlag'
 import { viewToDataBBox, type BBox } from '../lib/bbox'
 import { categoriesParam, categoryColorExpression } from '../lib/categories'
 import { transformCollection } from '../lib/geojson'
@@ -29,7 +29,7 @@ export function PoiLayer() {
   const codes = useMemo(() => categories?.map((c) => c.code) ?? [], [categories])
   const requested = categoriesParam(codes, hidden)
   const { data, isFetching } = usePoisInBBox(bbox, requested)
-  const slow = useDebounce(isFetching, LOADING_HINT_DELAY_MS) && isFetching
+  const slow = useDelayedFlag(isFetching, LOADING_HINT_DELAY_MS)
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined

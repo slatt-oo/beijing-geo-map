@@ -85,6 +85,27 @@ describe('apiGet', () => {
     await expect(apiGet('/districts')).resolves.toEqual(body)
   })
 
+  it('accepts JSON with a charset parameter, as gin sends it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          }),
+      ),
+    )
+
+    await expect(apiGet('/poi-categories')).resolves.toEqual({ data: [] })
+  })
+
+  it('keeps the server error code of a 503 that uses the standard error body', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(503, { error: { code: 'UNAVAILABLE', message: '数据库不可用' } })))
+
+    await expect(apiGet('/health')).rejects.toMatchObject({ status: 503, code: 'UNAVAILABLE', message: '数据库不可用' })
+  })
+
   it('rejects a successful response that is not JSON', async () => {
     vi.stubGlobal(
       'fetch',

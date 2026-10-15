@@ -1,4 +1,4 @@
-import { keepPreviousData, queryOptions, skipToken, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions, skipToken, useQuery, type QueryKey } from '@tanstack/react-query'
 import { bboxParam, type BBox } from '../lib/bbox'
 import type { MyLocation, Nearby } from '../store/useAppStore'
 import { apiGet, apiGetData } from './client'
@@ -61,6 +61,11 @@ export function poisQuery(bbox: BBox | null, categories: string[] | undefined | 
     // 全市视野下稍一平移 bbox 就会变，每条缓存都有约 4000 个要素，不必按默认在内存里保留 5 分钟。
     gcTime: 60 * 1000,
   })
+}
+
+// POI 详情加载失败时弹窗不打开、查询随即不再在用，提示条的「重试」请求不到它，所以这类错误不给重试按钮。
+export function isPoiDetailQuery(queryKey: QueryKey): boolean {
+  return queryKey[0] === 'poi'
 }
 
 export function poiDetailQuery(id: number | null) {
