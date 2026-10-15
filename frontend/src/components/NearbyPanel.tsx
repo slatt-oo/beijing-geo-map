@@ -16,7 +16,7 @@ export function NearbyPanel() {
   const { data: categories } = useCategories()
   const codes = useMemo(() => categories?.map((c) => c.code) ?? [], [categories])
   const requested = categoriesParam(codes, hidden)
-  const { data, isPending } = useNearby(nearby, requested)
+  const { data, isPending, isError } = useNearby(nearby, requested)
 
   if (!nearby) return null
   const colors = new Map(categories?.map((c) => [c.code, c.color]))
@@ -57,11 +57,13 @@ export function NearbyPanel() {
           ? '分类已全部关闭'
           : isPending
             ? '查询中…'
-            : features.length === 0
-              ? '范围内没有地点'
-              : features.length === NEARBY_LIMIT
-                ? `仅显示最近的 ${NEARBY_LIMIT} 个`
-                : `共 ${features.length} 个`}
+            : isError
+              ? '查询失败'
+              : features.length === 0
+                ? '范围内没有地点'
+                : features.length === NEARBY_LIMIT
+                  ? `仅显示最近的 ${NEARBY_LIMIT} 个`
+                  : `共 ${features.length} 个`}
       </p>
       <ul className="mt-2 -mx-1 flex-1 overflow-y-auto">
         {features.map((f) => (

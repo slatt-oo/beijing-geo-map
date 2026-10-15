@@ -12,34 +12,41 @@ const MAX_QUERY_LENGTH = 50
 export function SearchBox() {
   const map = useMap()
   const [text, setText] = useState('')
+  const [chosen, setChosen] = useState(false)
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
-  const query = useDebounce(text.trim(), SEARCH_DEBOUNCE_MS)
+  // 选中结果后输入框显示它的名称，但不再用这个名称搜索：有些名称超过接口允许的 50 个字符。
+  const query = useDebounce(chosen ? '' : text.trim(), SEARCH_DEBOUNCE_MS)
   const { data: hits, isFetching } = useSearch(query)
   const { data: categories } = useCategories()
 
   const colors = new Map(categories?.map((c) => [c.code, c.color]))
   const results = query === '' ? [] : (hits ?? [])
   const showDropdown = open && query !== '' && hits !== undefined
+  // 新结果可能比旧结果少，键盘选中的位置超出范围时视为没有选中。
+  const activeIndex = active < results.length ? active : -1
 
   const choose = (hit: SearchHit) => {
     setText(hit.name)
+    setChosen(true)
     setOpen(false)
     setActive(-1)
     focusPoi(map, hit.id, hit.location)
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // 输入法组字时的回车用来确认输入，不是选择结果（Safari 中 isComposing 为 false，只能看 keyCode）。
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
     if (e.key === 'ArrowDown' && results.length > 0) {
       e.preventDefault()
       setOpen(true)
-      setActive((i) => (i + 1) % results.length)
+      setActive((activeIndex + 1) % results.length)
     } else if (e.key === 'ArrowUp' && results.length > 0) {
       e.preventDefault()
-      setActive((i) => (i <= 0 ? results.length - 1 : i - 1))
+      setActive(activeIndex <= 0 ? results.length - 1 : activeIndex - 1)
     } else if (e.key === 'Enter' && results.length > 0) {
       e.preventDefault()
-      choose(results[Math.max(active, 0)])
+      choose(results[Math.max(activeIndex, 0)])
     } else if (e.key === 'Escape') {
       setOpen(false)
     }
@@ -54,10 +61,13 @@ export function SearchBox() {
         placeholder="搜索地铁站、高校、景点…"
         aria-label="搜索地点"
         role="combobox"
+        aria-autocomplete="list"
         aria-expanded={showDropdown}
-        aria-controls="search-results"
+        aria-controls={showDropdown ? 'search-results' : undefined}
+        aria-activedescendant={showDropdown && activeIndex >= 0 ? `search-option-${results[activeIndex].id}` : undefined}
         onChange={(e) => {
           setText(e.target.value)
+          setChosen(false)
           setOpen(true)
           setActive(-1)
         }}
@@ -78,15 +88,16 @@ export function SearchBox() {
           {results.map((hit, i) => (
             <li
               key={hit.id}
+              id={`search-option-${hit.id}`}
               role="option"
-              aria-selected={i === active}
+              aria-selected={i === activeIndex}
               // 用 mousedown 而不是 click：click 之前输入框会先失焦，下拉框已经关掉了。
               onMouseDown={(e) => {
                 e.preventDefault()
                 choose(hit)
               }}
               onMouseEnter={() => setActive(i)}
-              className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm ${i === active ? 'bg-slate-100' : ''}`}
+              className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm ${i === activeIndex ? 'bg-slate-100' : ''}`}
             >
               <span
                 className="h-2.5 w-2.5 shrink-0 rounded-full"
