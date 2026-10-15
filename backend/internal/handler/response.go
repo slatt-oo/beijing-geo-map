@@ -70,7 +70,8 @@ func writeServiceError(c *gin.Context, err error, notFoundMessage string) {
 		writeError(c, http.StatusBadRequest, CodeInvalidParam, "未知的分类编码："+unknown.Code)
 	case notFoundMessage != "" && errors.Is(err, service.ErrNotFound):
 		writeError(c, http.StatusNotFound, CodeNotFound, notFoundMessage)
-	case errors.Is(err, context.Canceled) && c.Request.Context().Err() != nil:
+	// 只看 Canceled：请求超时（DeadlineExceeded）是服务端的问题，要按内部错误记录。
+	case errors.Is(err, context.Canceled) && errors.Is(c.Request.Context().Err(), context.Canceled):
 		c.AbortWithStatus(statusClientClosedRequest)
 	default:
 		slog.ErrorContext(c.Request.Context(), "request failed", "path", c.Request.URL.Path, "err", err)
