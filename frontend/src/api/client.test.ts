@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, apiGet, apiGetData, buildUrl, errorMessage, shouldRetry } from './client'
+import { ApiError, apiGet, apiGetData, buildUrl, errorMessage, isRetryable, shouldRetry } from './client'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -57,9 +57,50 @@ describe('apiGet', () => {
   })
 
   it('falls back to HTTP_ERROR when the error body is not the standard format', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>Bad Gateway</html>', { status: 502 })))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>Internal Server Error</html>', { status: 500 })))
 
-    await expect(apiGet('/health')).rejects.toMatchObject({ status: 502, code: 'HTTP_ERROR' })
+    await expect(apiGet('/health')).rejects.toMatchObject({ status: 500, code: 'HTTP_ERROR' })
+  })
+
+  it.each([502, 503, 504])('reports an unreachable backend for an HTML %i from nginx', async (status) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>Bad Gateway</html>', { status })))
+
+    await expect(apiGet('/health')).rejects.toMatchObject({
+      status,
+      code: 'BACKEND_UNAVAILABLE',
+      message: '后端服务未启动或暂时不可用',
+    })
+  })
+
+  it('accepts GeoJSON responses', async () => {
+    const body = { type: 'FeatureCollection', features: [] }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/geo+json' } }),
+      ),
+    )
+
+    await expect(apiGet('/districts')).resolves.toEqual(body)
+  })
+
+  it('rejects a successful response that is not JSON', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('<!doctype html><title>北京地图 Demo</title>', { status: 200 })),
+    )
+
+    await expect(apiGet('/health')).rejects.toMatchObject({ status: 200, code: 'BAD_RESPONSE' })
+  })
+
+  it('rejects a JSON content type whose body does not parse', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"data":', { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    )
+
+    await expect(apiGet('/health')).rejects.toMatchObject({ status: 200, code: 'BAD_RESPONSE' })
   })
 
   it('maps network failures to a NETWORK ApiError', async () => {
@@ -119,6 +160,20 @@ describe('errorMessage', () => {
 
   it('falls back to a generic message for anything else', () => {
     expect(errorMessage(new TypeError('boom'))).toBe('请求失败，请稍后重试')
+  })
+})
+
+describe('isRetryable', () => {
+  it('treats network, server and unrecognised responses as worth retrying', () => {
+    expect(isRetryable(new ApiError(0, 'NETWORK', '网络错误'))).toBe(true)
+    expect(isRetryable(new ApiError(502, 'BACKEND_UNAVAILABLE', '后端服务未启动'))).toBe(true)
+    expect(isRetryable(new ApiError(200, 'BAD_RESPONSE', '无法识别'))).toBe(true)
+    expect(isRetryable(new TypeError('boom'))).toBe(true)
+  })
+
+  it('does not retry client errors', () => {
+    expect(isRetryable(new ApiError(400, 'INVALID_PARAM', 'bbox 格式错误'))).toBe(false)
+    expect(isRetryable(new ApiError(404, 'NOT_FOUND', 'POI 不存在'))).toBe(false)
   })
 })
 

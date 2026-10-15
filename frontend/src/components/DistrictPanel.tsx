@@ -6,7 +6,7 @@ import { useAppStore } from '../store/useAppStore'
 export function DistrictPanel() {
   const adcode = useAppStore((s) => s.selectedDistrict)
   const selectDistrict = useAppStore((s) => s.selectDistrict)
-  const { data: detail, isError } = useDistrict(adcode)
+  const { data: detail, isError, isFetching, refetch } = useDistrict(adcode)
   const { data: categories } = useCategories()
 
   if (adcode === null) return null
@@ -14,7 +14,7 @@ export function DistrictPanel() {
   return (
     <aside aria-label="区详情" className="pointer-events-auto rounded-lg bg-white/95 p-4 shadow-lg ring-1 ring-slate-200">
       <div className="flex items-start justify-between gap-2">
-        <h2 className="text-lg font-semibold text-slate-900">{detail?.name ?? (isError ? '加载失败' : '加载中…')}</h2>
+        <h2 className="text-lg font-semibold text-slate-900">{detail?.name ?? (isError && !isFetching ? '加载失败' : '加载中…')}</h2>
         <button
           type="button"
           aria-label="关闭区详情"
@@ -24,6 +24,15 @@ export function DistrictPanel() {
           ×
         </button>
       </div>
+      {!detail && isError && !isFetching && (
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          className="mt-2 rounded bg-slate-100 px-2 py-1 text-sm text-slate-700 hover:bg-slate-200"
+        >
+          重试
+        </button>
+      )}
       {detail && (
         <>
           <p className="mt-1 text-sm text-slate-500">面积 {formatArea(detail.area_km2)}</p>

@@ -8,7 +8,7 @@ const TONE_CLASS = {
   error: 'bg-red-50 text-red-700 ring-red-200',
 }
 
-// 普通提示几秒后自动消失；错误提示一直显示，直到用户关闭或被新的提示替换。
+// 普通提示几秒后自动消失；错误提示一直显示，直到用户关闭、重试或被新的提示替换。
 export function NoticeBanner() {
   const notice = useAppStore((s) => s.notice)
   const dismissNotice = useAppStore((s) => s.dismissNotice)
@@ -20,12 +20,25 @@ export function NoticeBanner() {
   }, [notice])
 
   if (!notice) return null
+  const { retry } = notice
   return (
     <div
       role={notice.tone === 'error' ? 'alert' : 'status'}
       className={`pointer-events-auto flex max-w-xs items-start gap-2 rounded-lg px-3 py-2 text-sm shadow-lg ring-1 ${TONE_CLASS[notice.tone]}`}
     >
       <span className="flex-1">{notice.message}</span>
+      {retry && (
+        <button
+          type="button"
+          onClick={() => {
+            dismissNotice()
+            retry()
+          }}
+          className="shrink-0 font-medium underline underline-offset-2 hover:no-underline"
+        >
+          重试
+        </button>
+      )}
       <button type="button" aria-label="关闭提示" onClick={dismissNotice} className="leading-none opacity-70 hover:opacity-100">
         ×
       </button>
