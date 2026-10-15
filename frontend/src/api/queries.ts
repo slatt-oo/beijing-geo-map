@@ -82,14 +82,12 @@ export function searchQuery(q: string) {
   })
 }
 
-// categories 的含义与 poisQuery 相同。
+// categories 的含义与 poisQuery 相同。换半径或分类时沿用上一次的结果，避免列表闪烁；
+// 换中心时距离全都变了，不能沿用。
 export function nearbyQuery(nearby: Nearby | null, categories: string[] | undefined | null) {
+  const [lng, lat] = nearby?.center ?? [null, null]
   return queryOptions({
-    queryKey: [
-      'nearby',
-      nearby && [...nearby.center, nearby.radius],
-      categories === null ? 'none' : (categories ?? 'all'),
-    ],
+    queryKey: ['nearby', lng, lat, nearby?.radius ?? null, categories === null ? 'none' : (categories ?? 'all')],
     queryFn:
       nearby === null || categories === null
         ? skipToken
@@ -99,7 +97,10 @@ export function nearbyQuery(nearby: Nearby | null, categories: string[] | undefi
               { lng: nearby.center[0], lat: nearby.center[1], radius: nearby.radius, categories, limit: NEARBY_LIMIT },
               signal,
             ),
-    placeholderData: categories === null ? undefined : keepPreviousData,
+    placeholderData: (previous, previousQuery) =>
+      categories !== null && previousQuery?.queryKey[1] === lng && previousQuery.queryKey[2] === lat
+        ? previous
+        : undefined,
     staleTime: 5 * 60 * 1000,
   })
 }

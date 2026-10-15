@@ -72,6 +72,18 @@ describe('searchQuery', () => {
     expect(searchQuery('').queryFn).toBe(skipToken)
   })
 
+  it('drops the previous hits when the query is cleared', async () => {
+    stubFetch({ data: [] })
+    const observer = new QueryObserver(new QueryClient(), searchQuery('北京'))
+    const unsubscribe = observer.subscribe(() => {})
+    await vi.waitFor(() => expect(observer.getCurrentResult().isSuccess).toBe(true))
+
+    observer.setOptions(searchQuery(''))
+
+    expect(observer.getCurrentResult().data).toBeUndefined()
+    unsubscribe()
+  })
+
   it('requests the query with the dropdown limit and unwraps the hits', async () => {
     const fetchMock = stubFetch({ data: [{ id: 3, name: '北京大学', category: 'university', district_name: '海淀区', location: [116.3, 39.99] }] })
 
@@ -100,6 +112,20 @@ describe('nearbyQuery', () => {
     expect(nearbyQuery(nearby, null).queryFn).toBe(skipToken)
   })
 
+  it('keeps the previous list while the radius changes, but not when the center moves', async () => {
+    stubFetch({ type: 'FeatureCollection', features: [], center: nearby.center, radius: 1000 })
+    const observer = new QueryObserver(new QueryClient(), nearbyQuery(nearby, undefined))
+    const unsubscribe = observer.subscribe(() => {})
+    await vi.waitFor(() => expect(observer.getCurrentResult().isSuccess).toBe(true))
+
+    observer.setOptions(nearbyQuery({ ...nearby, radius: 2000 }, undefined))
+    expect(observer.getCurrentResult().isPlaceholderData).toBe(true)
+
+    observer.setOptions(nearbyQuery({ center: [116.3, 39.99], radius: 2000 }, undefined))
+    expect(observer.getCurrentResult().data).toBeUndefined()
+    unsubscribe()
+  })
+
   it('requests the center, radius, categories and the endpoint limit', async () => {
     const fetchMock = stubFetch({ type: 'FeatureCollection', features: [], center: nearby.center, radius: 1000 })
 
@@ -114,6 +140,17 @@ describe('nearbyQuery', () => {
 describe('locateQuery', () => {
   it('skips the request without a location', () => {
     expect(locateQuery(null).queryFn).toBe(skipToken)
+  })
+
+  it('requests the location and ignores accuracy in the cache key', async () => {
+    const fetchMock = stubFetch({ data: { adcode: '110108', name: '海淀区' } })
+
+    await new QueryClient().fetchQuery(locateQuery({ lng: 116.31, lat: 39.99, accuracy: 30 }))
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/districts/locate?lng=116.31&lat=39.99')
+    expect(locateQuery({ lng: 116.31, lat: 39.99, accuracy: 30 }).queryKey).toEqual(
+      locateQuery({ lng: 116.31, lat: 39.99, accuracy: null }).queryKey,
+    )
   })
 
   it('returns null outside Beijing', async () => {

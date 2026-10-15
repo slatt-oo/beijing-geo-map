@@ -3,8 +3,6 @@ import type { LngLat } from '../lib/coord'
 
 // 与后端 internal/service/types.go 的 JSON 结构一一对应，坐标都是 WGS-84。
 
-export type DataResponse<T> = { data: T }
-
 export type Category = { code: string; name: string; color: string }
 
 export type DistrictProperties = {
