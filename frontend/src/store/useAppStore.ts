@@ -74,7 +74,10 @@ export const useAppStore = create<AppState>()((set) => ({
       nearbyAfterLocate: false,
       ...(state.nearbyAfterLocate
         ? {
-            nearby: { center: [location.lng, location.lat] as LngLat, radius: DEFAULT_NEARBY_RADIUS },
+            nearby: {
+              center: [location.lng, location.lat] as LngLat,
+              radius: state.nearby?.radius ?? DEFAULT_NEARBY_RADIUS,
+            },
             selectedDistrict: null,
           }
         : {}),

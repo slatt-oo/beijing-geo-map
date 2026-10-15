@@ -3,6 +3,6 @@ export function formatArea(km2: number): string {
 }
 
 export function formatDistance(meters: number): string {
-  if (meters < 1000) return `${Math.round(meters)} m`
+  if (Math.round(meters) < 1000) return `${Math.round(meters)} m`
   return `${(meters / 1000).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} km`
 }

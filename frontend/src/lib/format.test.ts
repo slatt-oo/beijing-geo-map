@@ -13,6 +13,7 @@ describe('formatDistance', () => {
   it('uses metres below 1 km and one decimal of kilometres above', () => {
     expect(formatDistance(320)).toBe('320 m')
     expect(formatDistance(999)).toBe('999 m')
+    expect(formatDistance(999.6)).toBe('1 km')
     expect(formatDistance(1000)).toBe('1 km')
     expect(formatDistance(1234)).toBe('1.2 km')
   })

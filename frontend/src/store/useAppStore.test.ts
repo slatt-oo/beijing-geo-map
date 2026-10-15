@@ -88,4 +88,30 @@ describe('useAppStore', () => {
 
     expect(state().contextMenu).toBeNull()
   })
+
+  it('keeps an open nearby search where it is when locating again', () => {
+    state().openNearby([116.4, 39.9])
+
+    state().setMyLocation({ lng: 116.31, lat: 39.99, accuracy: 30 })
+
+    expect(state().nearby).toEqual({ center: [116.4, 39.9], radius: DEFAULT_NEARBY_RADIUS })
+  })
+
+  it('keeps nearby results open when the click lands outside every district', () => {
+    state().openNearby([116.4, 39.9])
+
+    state().selectDistrict(null)
+
+    expect(state().nearby).toEqual({ center: [116.4, 39.9], radius: DEFAULT_NEARBY_RADIUS })
+  })
+
+  it('keeps the chosen radius when a pending nearby search opens after locating', () => {
+    state().openNearby([116.4, 39.9])
+    state().setNearbyRadius(2000)
+    state().requestNearbyAfterLocate()
+
+    state().setMyLocation({ lng: 116.31, lat: 39.99, accuracy: null })
+
+    expect(state().nearby).toEqual({ center: [116.31, 39.99], radius: 2000 })
+  })
 })
