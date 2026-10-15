@@ -44,6 +44,11 @@ export async function apiGet<T>(path: string, params?: Record<string, QueryValue
   return (await res.json()) as T
 }
 
+// 除 GeoJSON 接口外，其他接口都把结果包在 {"data": ...} 里。
+export async function apiGetData<T>(path: string, params?: Record<string, QueryValue>, signal?: AbortSignal): Promise<T> {
+  return (await apiGet<{ data: T }>(path, params, signal)).data
+}
+
 export function errorMessage(err: unknown): string {
   return err instanceof ApiError ? err.message : '请求失败，请稍后重试'
 }

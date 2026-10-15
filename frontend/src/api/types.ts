@@ -36,9 +36,23 @@ export type POIDetail = {
   name: string
   name_en: string | null
   category: Category
-  district: { adcode: string; name: string } | null
+  district: DistrictRef | null
   location: LngLat
   address: string | null
   tags: Record<string, string>
   osm_url: string
 }
+
+export type DistrictRef = { adcode: string; name: string }
+
+export type SearchHit = {
+  id: number
+  name: string
+  category: string
+  district_name: string | null
+  location: LngLat
+}
+
+export type NearbyProperties = POIProperties & { distance_m: number }
+
+export type NearbyCollection = FeatureCollection<Point, NearbyProperties> & { center: LngLat; radius: number }
