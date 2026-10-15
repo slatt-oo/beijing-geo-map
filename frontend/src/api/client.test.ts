@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, apiGet, buildUrl, errorMessage, shouldRetry } from './client'
+import { ApiError, apiGet, apiGetData, buildUrl, errorMessage, shouldRetry } from './client'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -132,5 +132,26 @@ describe('shouldRetry', () => {
   it('does not retry client errors', () => {
     expect(shouldRetry(0, new ApiError(400, 'INVALID_PARAM', 'bbox 格式错误'))).toBe(false)
     expect(shouldRetry(0, new ApiError(404, 'NOT_FOUND', 'POI 不存在'))).toBe(false)
+  })
+})
+
+describe('apiGetData', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('unwraps the data envelope', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { data: { adcode: '110108', name: '海淀区' } })))
+
+    await expect(apiGetData('/districts/locate', { lng: 116.3, lat: 39.99 })).resolves.toEqual({
+      adcode: '110108',
+      name: '海淀区',
+    })
+  })
+
+  it('keeps a null result, which some endpoints use for "not found here"', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { data: null })))
+
+    await expect(apiGetData('/districts/locate', { lng: 116.7, lat: 39.5 })).resolves.toBeNull()
   })
 })

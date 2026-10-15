@@ -5,16 +5,22 @@ import { FALLBACK_POI_COLOR } from '../lib/categories'
 export const SOURCE = {
   districts: 'districts',
   districtLabels: 'district-labels',
+  nearbyCircle: 'nearby-circle',
   pois: 'pois',
+  myLocation: 'my-location',
 } as const
 
 export const LAYER = {
   districtFill: 'district-fill',
   districtLine: 'district-line',
   districtLabel: 'district-label',
+  nearbyFill: 'nearby-fill',
+  nearbyLine: 'nearby-line',
   poiCluster: 'poi-cluster',
   poiClusterCount: 'poi-cluster-count',
   poiPoint: 'poi-point',
+  myLocationAccuracy: 'my-location-accuracy',
+  myLocationDot: 'my-location-dot',
 } as const
 
 export const EMPTY_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] }
@@ -29,7 +35,7 @@ export function baseStyle(tiles: string[]): StyleSpecification {
   }
 }
 
-// 所有数据图层在地图加载时一次建好（数据先为空），保证从下到上的顺序固定；之后只更新数据和样式。
+// 所有数据图层在样式加载完成时一次建好（数据先为空），保证从下到上的顺序固定；之后只更新数据和样式。
 export function addDataLayers(map: MaplibreMap): void {
   map.addSource(SOURCE.districts, {
     type: 'geojson',
@@ -38,6 +44,7 @@ export function addDataLayers(map: MaplibreMap): void {
     attribution: '行政区划 © 阿里云 DataV.GeoAtlas',
   })
   map.addSource(SOURCE.districtLabels, { type: 'geojson', data: EMPTY_COLLECTION })
+  map.addSource(SOURCE.nearbyCircle, { type: 'geojson', data: EMPTY_COLLECTION })
   map.addSource(SOURCE.pois, {
     type: 'geojson',
     data: EMPTY_COLLECTION,
@@ -46,6 +53,7 @@ export function addDataLayers(map: MaplibreMap): void {
     clusterMaxZoom: 14,
     attribution: '© OpenStreetMap contributors（ODbL）',
   })
+  map.addSource(SOURCE.myLocation, { type: 'geojson', data: EMPTY_COLLECTION })
 
   map.addLayer({
     id: LAYER.districtFill,
@@ -75,6 +83,18 @@ export function addDataLayers(map: MaplibreMap): void {
     source: SOURCE.districtLabels,
     layout: { 'text-field': ['get', 'name'], 'text-size': 13 },
     paint: { 'text-color': '#1e3a8a', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
+  })
+  map.addLayer({
+    id: LAYER.nearbyFill,
+    type: 'fill',
+    source: SOURCE.nearbyCircle,
+    paint: { 'fill-color': '#0ea5e9', 'fill-opacity': 0.1 },
+  })
+  map.addLayer({
+    id: LAYER.nearbyLine,
+    type: 'line',
+    source: SOURCE.nearbyCircle,
+    paint: { 'line-color': '#0284c7', 'line-width': 2, 'line-dasharray': [2, 1] },
   })
   map.addLayer({
     id: LAYER.poiCluster,
@@ -108,5 +128,19 @@ export function addDataLayers(map: MaplibreMap): void {
       'circle-stroke-color': '#ffffff',
       'circle-stroke-width': 1,
     },
+  })
+  map.addLayer({
+    id: LAYER.myLocationAccuracy,
+    type: 'fill',
+    source: SOURCE.myLocation,
+    filter: ['==', ['geometry-type'], 'Polygon'],
+    paint: { 'fill-color': '#2563eb', 'fill-opacity': 0.15, 'fill-outline-color': '#2563eb' },
+  })
+  map.addLayer({
+    id: LAYER.myLocationDot,
+    type: 'circle',
+    source: SOURCE.myLocation,
+    filter: ['==', ['geometry-type'], 'Point'],
+    paint: { 'circle-color': '#2563eb', 'circle-radius': 7, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 },
   })
 }

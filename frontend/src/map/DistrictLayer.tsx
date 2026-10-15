@@ -7,9 +7,7 @@ import { bboxOfGeometry, transformCollection } from '../lib/geojson'
 import { useAppStore } from '../store/useAppStore'
 import { LAYER, SOURCE } from './layers'
 import { useMap } from './MapView'
-
-// 左侧面板约 300 像素宽，缩放到区时给它留出位置。
-const FIT_PADDING = { top: 60, bottom: 60, left: 340, right: 60 }
+import { FIT_PADDING } from './padding'
 
 export function DistrictLayer() {
   const map = useMap()
