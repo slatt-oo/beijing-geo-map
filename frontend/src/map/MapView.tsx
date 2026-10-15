@@ -47,6 +47,8 @@ export function MapView({ children }: { children?: ReactNode }) {
     // 瓦片地址被拦截或不可用时地图只剩灰底，没有任何报错；每次打开页面只提示一次。
     let basemapErrorShown = false
     instance.on('error', (e) => {
+      // 注册了 error 监听后 MapLibre 不再自己把错误打印到控制台，这里补上，否则数据图层出错时什么也看不到。
+      console.error(e.error)
       if (basemapErrorShown || !('sourceId' in e) || e.sourceId !== BASEMAP_SOURCE) return
       basemapErrorShown = true
       useAppStore.getState().showError('底图加载失败，请检查网络；如果瓦片地址不可用，可以用 VITE_TILE_URL 换一个底图')
