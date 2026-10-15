@@ -2,6 +2,8 @@ import type { FeatureCollection } from 'geojson'
 import type { Map as MaplibreMap, StyleSpecification } from 'maplibre-gl'
 import { FALLBACK_POI_COLOR } from '../lib/categories'
 
+export const BASEMAP_SOURCE = 'basemap'
+
 export const SOURCE = {
   districts: 'districts',
   districtLabels: 'district-labels',
@@ -25,13 +27,13 @@ export const LAYER = {
 
 export const EMPTY_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
-export function baseStyle(tiles: string[]): StyleSpecification {
+export function baseStyle(tiles: string[], attribution: string): StyleSpecification {
   return {
     version: 8,
     sources: {
-      basemap: { type: 'raster', tiles, tileSize: 256, maxzoom: 18, attribution: '底图 © 高德地图' },
+      [BASEMAP_SOURCE]: { type: 'raster', tiles, tileSize: 256, maxzoom: 18, attribution },
     },
-    layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }],
+    layers: [{ id: 'basemap', type: 'raster', source: BASEMAP_SOURCE }],
   }
 }
 

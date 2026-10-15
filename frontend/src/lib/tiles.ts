@@ -1,7 +1,9 @@
-import type { TileCrs } from './coord'
+export type TileCrs = 'gcj02' | 'wgs84'
 
 export const DEFAULT_TILE_URL =
   'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}'
+
+export const DEFAULT_TILE_ATTRIBUTION = '底图 © 高德地图'
 
 // MapLibre 不认识 {s} 占位符，要展开成 1 到 4 号子域名的多个地址，由 MapLibre 轮流请求。
 export function expandTileUrl(template: string): string[] {

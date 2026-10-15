@@ -2,10 +2,11 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { Map as MaplibreMap, setWorkerUrl } from 'maplibre-gl'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { BEIJING_BBOX, REGION_BBOX, tileUrls, toDisplay } from '../config'
+import { BEIJING_BBOX, REGION_BBOX, tileAttribution, tileUrls, toDisplay } from '../config'
 import type { BBox } from '../lib/bbox'
 import type { LngLat } from '../lib/coord'
-import { addDataLayers, baseStyle } from './layers'
+import { useAppStore } from '../store/useAppStore'
+import { addDataLayers, BASEMAP_SOURCE, baseStyle } from './layers'
 
 // MapLibre 6 在运行时按 import.meta.url 拼出 worker 地址，打包后那个文件并不存在，所以显式交给 Vite 输出并指定。
 setWorkerUrl(workerUrl)
@@ -30,7 +31,7 @@ export function MapView({ children }: { children?: ReactNode }) {
   useEffect(() => {
     const instance = new MaplibreMap({
       container: containerRef.current!,
-      style: baseStyle(tileUrls),
+      style: baseStyle(tileUrls, tileAttribution),
       bounds: displayBounds(BEIJING_BBOX),
       maxBounds: displayBounds(REGION_BBOX),
       maxZoom: 18,
@@ -42,6 +43,13 @@ export function MapView({ children }: { children?: ReactNode }) {
     instance.once('style.load', () => {
       addDataLayers(instance)
       setMap(instance)
+    })
+    // 瓦片地址被拦截或不可用时地图只剩灰底，没有任何报错；每次打开页面只提示一次。
+    let basemapErrorShown = false
+    instance.on('error', (e) => {
+      if (basemapErrorShown || !('sourceId' in e) || e.sourceId !== BASEMAP_SOURCE) return
+      basemapErrorShown = true
+      useAppStore.getState().showError('底图加载失败，请检查网络；如果瓦片地址不可用，可以用 VITE_TILE_URL 换一个底图')
     })
     return () => instance.remove()
   }, [])
