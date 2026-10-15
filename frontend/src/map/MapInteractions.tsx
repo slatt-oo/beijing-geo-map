@@ -29,10 +29,14 @@ export function MapInteractions() {
 
   useEffect(() => {
     const click = map.on('click', (e) => {
-      const { mode, openPoi, selectDistrict, setMyLocation } = useAppStore.getState()
+      const { mode, nearby, openPoi, selectDistrict, setMyLocation } = useAppStore.getState()
       const [poi] = map.queryRenderedFeatures(e.point, { layers: POI_LAYERS })
       const [district] = map.queryRenderedFeatures(e.point, { layers: [LAYER.districtFill] })
-      const action = routeClick(mode, toPoiHit(poi), district ? String(district.properties.adcode) : undefined)
+      const action = routeClick(
+        { mode, nearbyOpen: nearby !== null },
+        toPoiHit(poi),
+        district ? String(district.properties.adcode) : undefined,
+      )
       switch (action.type) {
         case 'pickLocation': {
           const [lng, lat] = toData([e.lngLat.lng, e.lngLat.lat])
@@ -50,6 +54,9 @@ export function MapInteractions() {
         case 'openPoi':
           openPoi(action.id)
           break
+        case 'closePopup':
+          openPoi(null)
+          break
         case 'selectDistrict':
           openPoi(null)
           selectDistrict(action.adcode)
@@ -61,11 +68,13 @@ export function MapInteractions() {
       useAppStore.getState().openContextMenu(toData([e.lngLat.lng, e.lngLat.lat]))
     })
     const move = map.on('mousemove', (e) => {
-      if (useAppStore.getState().mode === 'pickLocation') {
+      const { mode, nearby } = useAppStore.getState()
+      if (mode === 'pickLocation') {
         map.getCanvas().style.cursor = 'crosshair'
         return
       }
-      const hit = map.queryRenderedFeatures(e.point, { layers: CLICKABLE_LAYERS }).length > 0
+      const layers = nearby ? POI_LAYERS : CLICKABLE_LAYERS
+      const hit = map.queryRenderedFeatures(e.point, { layers }).length > 0
       map.getCanvas().style.cursor = hit ? 'pointer' : ''
     })
     return () => {

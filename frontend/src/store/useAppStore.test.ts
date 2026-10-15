@@ -114,4 +114,13 @@ describe('useAppStore', () => {
 
     expect(state().nearby).toEqual({ center: [116.31, 39.99], radius: 2000 })
   })
+
+  it('drops a pending nearby-after-locate when a nearby search is opened directly', () => {
+    state().requestNearbyAfterLocate()
+    state().openNearby([116.5, 39.95])
+
+    state().setMyLocation({ lng: 116.31, lat: 39.99, accuracy: 30 })
+
+    expect(state().nearby).toEqual({ center: [116.5, 39.95], radius: DEFAULT_NEARBY_RADIUS })
+  })
 })

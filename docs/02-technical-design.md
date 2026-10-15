@@ -76,8 +76,8 @@ beijing-geo-map/
         ├── api/                # fetch 封装、接口类型、TanStack Query hooks
         ├── lib/                # coord.ts、geojson.ts、bbox.ts、tiles.ts 等纯函数
         ├── map/                # 地图实例、图层定义、各图层组件、点击分发、POI 弹窗、右键菜单
-        ├── store/              # Zustand 全局状态
-        ├── hooks/              # useLocate（浏览器定位，失败时转入点选）、useDebounce
+        ├── store/              # Zustand 全局状态；定位流程（locate.ts，失败时转入点选）
+        ├── hooks/              # useDebounce
         └── components/         # 搜索框、区详情面板、附近面板、POI 详情卡片、分类开关、定位和附近按钮、点选提示、提示条
 ```
 
@@ -398,6 +398,7 @@ Zustand store 中保存的状态：
 | `activePoiId` | 当前打开详情弹窗的 POI |
 | `notice` | 右上角提示条的内容，格式为 `{tone, message}`：`info` 为普通提示，4 秒后自动消失；`error` 为错误提示，一直显示到用户关闭或被新的提示替换 |
 | `mode` | 当前模式：`normal`（普通）或 `pickLocation`（在地图上点选位置） |
+| `locating` | 是否正在等待浏览器定位。定位进行中不会再发起新的定位，「定位」按钮显示「定位中…」并暂时不可点击 |
 | `myLocation` | 我的位置，格式为 `{lng, lat, accuracy}`，WGS-84；在地图上点选的位置没有精度，`accuracy` 为 `null` |
 | `nearby` | 附近查询的中心和半径，格式为 `{center, radius}` 或 `null` |
 | `nearbyAfterLocate` | 点击「附近」时还没有位置，会先定位；为 `true` 表示定位或点选完成后接着打开附近查询 |
@@ -406,7 +407,7 @@ Zustand store 中保存的状态：
 ### 6.2 页面布局
 
 - 地图占满全屏。
-- 左上角：搜索框，下面是浮动面板，显示区详情或附近查询结果，两者互斥：选中区会关闭附近查询，打开附近查询会取消选中的区。搜索框和面板宽 320 像素，地图缩放到某个区或查询范围时，左侧留出 360 像素的边距。
+- 左上角：搜索框，下面是浮动面板，显示区详情或附近查询结果，两者互斥：打开附近查询会取消选中的区；附近面板打开时，点击地图不会选中区，要查看区详情需要先关闭附近面板。搜索框和面板宽 320 像素，地图缩放到某个区或查询范围时，左侧留出 360 像素的边距。
 - 右上角：提示条，下面是分类开关，用分类颜色标识。
 - 右下角：「定位」和「附近」两个按钮。
 - 底部中间：点选位置模式的提示和「取消」按钮。
@@ -419,10 +420,10 @@ Zustand store 中保存的状态：
 | `basemap` | 高德栅格瓦片 | `tiles` 中列出 `webrd01` 到 `webrd04` 四个子域名 |
 | `district-fill` | `/districts` | 半透明填充，悬停和选中时通过 `feature-state` 加深；数据源设置 `promoteId: "adcode"` |
 | `district-line` / `district-label` | 同上 | 边线；区名标注在 `center` 位置 |
-| `nearby-circle` | 前端计算 | 用 `@turf/circle` 生成 64 边形，显示查询范围：浅色填充加虚线边框 |
+| `nearby-fill` / `nearby-line` | 前端计算 | 用 `@turf/circle` 生成 64 边形，显示查询范围：浅色填充加虚线边框 |
 | `poi-cluster` / `poi-cluster-count` | `/pois` | 设置 `cluster: true`，聚合半径 50 像素，最大聚合级别 14 |
 | `poi-point` | 同上 | 用分类颜色的圆点表示，颜色通过 `match` 表达式根据 `category` 取值 |
-| `my-location` | store | 蓝色圆点；浏览器定位得到的位置还显示精度圈。精度圈同样用 `@turf/circle` 按 `accuracy` 的米数生成多边形，在任何缩放级别都与底图比例一致 |
+| `my-location-accuracy` / `my-location-dot` | store | 蓝色圆点；浏览器定位得到的位置还显示精度圈。精度圈同样用 `@turf/circle` 按 `accuracy` 的米数生成多边形，在任何缩放级别都与底图比例一致 |
 
 所有数据在调用 `setData` 之前都要经过 `toDisplay()`，由 `lib/geojson.ts` 递归转换 GeoJSON 中的每个坐标。
 
@@ -441,13 +442,13 @@ Zustand store 中保存的状态：
 1. 地图 `moveend` 事件触发后防抖 300ms。
 2. 取当前视野的四个角，分别经过 `toData()` 转换后取外包框，向外取整到 0.001°（约 100 米），再请求 `/pois`。`limit` 固定为 5000：当前约 4100 个 POI，全市视野也不会被截断，聚合数字才准确。
 3. 请求参数（bbox 和分类）作为 TanStack Query 的缓存键，视野回到之前的位置时直接使用缓存；换视野时先保留旧数据，新数据到达后再替换。分类全部关闭时不发请求，直接清空图层。
-4. 点击统一由一个处理函数分发，判断规则在 `lib/clickRoute.ts`：点选位置模式下任何点击都用来设置位置；否则先查 POI 图层，再查区图层，所以点击区内的 POI 不会同时选中区。点击聚合圆时调用 `getClusterExpansionZoom` 放大；点到 POI 以外的地方会关闭详情弹窗。
+4. 点击统一由一个处理函数分发，判断规则在 `lib/clickRoute.ts`：点选位置模式下任何点击都用来设置位置；否则先查 POI 图层，再查区图层，所以点击区内的 POI 不会同时选中区。点击聚合圆时调用 `getClusterExpansionZoom` 放大；点到 POI 以外的地方会关闭详情弹窗；附近面板打开时，这样的点击只关闭弹窗，不会选中区，以免丢掉附近结果。
 5. 点击单个点时请求 `/pois/{id}`，并在 maplibre `Popup` 中通过 React portal 渲染详情：名称、英文名、分类、所在区和 OSM 链接。地址由 OSM 标签拼接而成，质量参差不齐，第一版不显示。
 6. 结果被截断时（`truncated`），提示「当前范围数据过多，请放大地图」。
 
 **F2 我的位置**
 
-1. 点击定位按钮，先提示「正在获取你的位置…」，再调用 `navigator.geolocation.getCurrentPosition`（启用高精度，10 秒超时，不使用缓存的位置）。`localhost` 属于安全上下文，可以直接使用定位接口。
+1. 点击定位按钮，按钮变为「定位中…」并暂时不可点击，同时调用 `navigator.geolocation.getCurrentPosition`（启用高精度，10 秒超时，不使用缓存的位置）。同一时间只有一次定位请求，否则先失败的请求会在用户点选位置之后又一次进入点选模式。`localhost` 属于安全上下文，可以直接使用定位接口。
 2. 定位成功：写入 `myLocation`，地图飞到该位置（缩放级别至少 14），显示蓝点和精度圈，请求 `/districts/locate`，提示「你在海淀区」，或者「当前位置不在北京市范围内」。
 3. 定位失败、用户拒绝授权或浏览器不支持定位：进入 `pickLocation` 模式，底部显示「浏览器定位失败，请在地图上点击你的位置」和「取消」按钮。点选模式下鼠标显示为十字，任何点击都用来设置位置，不会打开 POI 或选中区，右键也不弹出菜单。点击后把坐标经 `toData()` 转换并写入 `myLocation`（没有精度，只画蓝点），后续流程同上。
 4. 定位失败的提示文案会说明：桌面版 Chrome 在国内依赖的 Google 定位服务通常不可用，建议使用 Safari。
@@ -460,7 +461,7 @@ Zustand store 中保存的状态：
 
 **F5 附近**
 
-1. 点击「附近」按钮时，以 `myLocation` 为中心；如果还没有定位，先走一遍定位流程（包括失败后的点选），完成后自动打开附近查询，在点选模式中点「取消」会一并放弃。也可以在地图上右键，选择「以此为中心查附近」；右键菜单在点击或移动地图时关闭。
+1. 点击「附近」按钮时，以 `myLocation` 为中心；如果还没有定位，先走一遍定位流程（包括失败后的点选），完成后自动打开附近查询，在点选模式中点「取消」，或者等待期间直接右键选了查询中心，都会放弃这一步。也可以在地图上右键，选择「以此为中心查附近」；右键菜单在点击或移动地图时关闭。
 2. 半径有 500、1000、2000、5000 米四档，默认 1000 米；换中心时保留当前半径。
 3. 请求 `/pois/nearby`（`limit=100`，即接口上限；分类开关的规则与 `/pois` 相同），地图画出范围圆并缩放到它，面板列出结果和距离，例如「320 m」或「1.2 km」。结果正好 100 个时提示「仅显示最近的 100 个」：2 千米内通常有 80 到 100 个 POI，5 千米内约 340 个。
 4. 点击某条结果，地图飞过去（缩放级别 16）并打开弹窗。
@@ -468,7 +469,7 @@ Zustand store 中保存的状态：
 
 **弹窗与分类开关**互不影响：搜索结果和附近列表可以打开任何分类的 POI 详情，包括当前关闭的分类；关闭某个分类时，已经打开的该分类弹窗不会关闭。附近列表和地图图层一样遵循分类开关，搜索不受分类开关影响。
 
-第一版以桌面端为主，右键菜单不提供移动端长按的替代方式。
+第一版以桌面端为主：触屏上单指长按 500 毫秒会被 MapLibre 转成 `contextmenu` 事件，同样弹出右键菜单，但没有专门为移动端适配。
 
 ### 6.5 接口调用封装
 
@@ -509,7 +510,7 @@ Zustand store 中保存的状态：
 
 | 类型 | 范围 |
 |---|---|
-| Vitest 单元测试 | `lib/coord.ts`（读取同一份共享样例）、`lib/geojson.ts` 的递归坐标转换、`lib/bbox.ts`、`lib/tiles.ts`、`lib/categories.ts`、`lib/format.ts`、`lib/circle.ts`、`lib/clickRoute.ts` 的点击分发规则、`lib/geolocation.ts`（用假的 `Geolocation` 对象）、`store/useAppStore.ts`、`map/layers.ts` 的图层顺序（用只记录调用的假地图）、`api/client.ts` 的参数拼接、错误解析和 `data` 解包、`api/queries.ts` 的查询键和跳过条件（用 TanStack Query 的 `QueryObserver` 在 Node 中运行）。其他地图图层组件依赖 WebGL，不写单元测试，逻辑尽量放进上面这些纯函数 |
+| Vitest 单元测试 | `lib/coord.ts`（读取同一份共享样例）、`lib/geojson.ts` 的递归坐标转换、`lib/bbox.ts`、`lib/tiles.ts`、`lib/categories.ts`、`lib/format.ts`、`lib/circle.ts`、`lib/clickRoute.ts` 的点击分发规则、`lib/geolocation.ts`、`lib/search.ts`、`store/useAppStore.ts`、`store/locate.ts` 的定位流程（`lib/geolocation.ts` 和 `store/locate.ts` 用假的 `Geolocation` 对象）、`map/layers.ts` 的图层顺序（用只记录调用的假地图）、`api/client.ts` 的参数拼接、错误解析和 `data` 解包、`api/queries.ts` 的查询键和跳过条件（用 TanStack Query 的 `QueryObserver` 在 Node 中运行）。其他地图图层组件依赖 WebGL，不写单元测试，逻辑尽量放进上面这些纯函数 |
 | 手工验证 | 见第 10 节清单。阶段 3 和阶段 4 完成后，在浏览器中逐项操作并截图 |
 
 第一版不编写浏览器端到端测试。

@@ -3,11 +3,11 @@ import { useCategories, useSearch } from '../api/queries'
 import type { SearchHit } from '../api/types'
 import { useDebounce } from '../hooks/useDebounce'
 import { FALLBACK_POI_COLOR } from '../lib/categories'
+import { MAX_QUERY_LENGTH, toSearchTerm } from '../lib/search'
 import { focusPoi } from '../map/focus'
 import { useMap } from '../map/MapView'
 
 const SEARCH_DEBOUNCE_MS = 300
-const MAX_QUERY_LENGTH = 50
 
 export function SearchBox() {
   const map = useMap()
@@ -16,13 +16,13 @@ export function SearchBox() {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
   // 选中结果后输入框显示它的名称，但不再用这个名称搜索：有些名称超过接口允许的 50 个字符。
-  const query = useDebounce(chosen ? '' : text.trim(), SEARCH_DEBOUNCE_MS)
+  const query = useDebounce(chosen ? '' : toSearchTerm(text), SEARCH_DEBOUNCE_MS)
   const { data: hits, isFetching } = useSearch(query)
   const { data: categories } = useCategories()
 
   const colors = new Map(categories?.map((c) => [c.code, c.color]))
   const results = query === '' ? [] : (hits ?? [])
-  const showDropdown = open && query !== '' && hits !== undefined
+  const showDropdown = open && text.trim() !== '' && query !== '' && hits !== undefined
   // 新结果可能比旧结果少，键盘选中的位置超出范围时视为没有选中。
   const activeIndex = active < results.length ? active : -1
 
@@ -48,6 +48,8 @@ export function SearchBox() {
       e.preventDefault()
       choose(results[Math.max(activeIndex, 0)])
     } else if (e.key === 'Escape') {
+      // 阻止搜索框的默认行为：Chrome 和 Safari 按 Esc 会清空输入。
+      e.preventDefault()
       setOpen(false)
     }
   }
