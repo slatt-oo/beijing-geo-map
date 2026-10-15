@@ -44,6 +44,16 @@ export async function apiGet<T>(path: string, params?: Record<string, QueryValue
   return (await res.json()) as T
 }
 
+export function errorMessage(err: unknown): string {
+  return err instanceof ApiError ? err.message : '请求失败，请稍后重试'
+}
+
+// 4xx 是请求本身的问题，重试也不会成功，只会让错误提示晚出现约 1 秒；网络错误和 5xx 重试一次。
+export function shouldRetry(failureCount: number, error: unknown): boolean {
+  if (error instanceof ApiError && error.status >= 400 && error.status < 500) return false
+  return failureCount < 1
+}
+
 async function toApiError(res: Response): Promise<ApiError> {
   try {
     const body = (await res.json()) as { error?: { code?: unknown; message?: unknown } }

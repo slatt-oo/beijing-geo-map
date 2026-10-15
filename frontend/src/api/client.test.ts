@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, apiGet, buildUrl } from './client'
+import { ApiError, apiGet, buildUrl, errorMessage, shouldRetry } from './client'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -109,5 +109,28 @@ describe('apiGet', () => {
     )
 
     await expect(apiGet('/health', undefined, controller.signal)).rejects.toBe(reason)
+  })
+})
+
+describe('errorMessage', () => {
+  it('uses the server message of an ApiError', () => {
+    expect(errorMessage(new ApiError(404, 'NOT_FOUND', 'POI 不存在'))).toBe('POI 不存在')
+  })
+
+  it('falls back to a generic message for anything else', () => {
+    expect(errorMessage(new TypeError('boom'))).toBe('请求失败，请稍后重试')
+  })
+})
+
+describe('shouldRetry', () => {
+  it('retries a network or server error once', () => {
+    expect(shouldRetry(0, new ApiError(0, 'NETWORK', '网络错误'))).toBe(true)
+    expect(shouldRetry(0, new ApiError(500, 'INTERNAL', '服务器内部错误'))).toBe(true)
+    expect(shouldRetry(1, new ApiError(500, 'INTERNAL', '服务器内部错误'))).toBe(false)
+  })
+
+  it('does not retry client errors', () => {
+    expect(shouldRetry(0, new ApiError(400, 'INVALID_PARAM', 'bbox 格式错误'))).toBe(false)
+    expect(shouldRetry(0, new ApiError(404, 'NOT_FOUND', 'POI 不存在'))).toBe(false)
   })
 })

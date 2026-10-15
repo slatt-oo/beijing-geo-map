@@ -363,11 +363,11 @@ SET name        = EXCLUDED.name,
 
 ### 7.3 快照同步删除
 
-快照文件损坏或为空时，这一步会删光整张 `poi` 表。因此导入器会在执行删除前检查：如果快照解析出的 POI 少于 1000 条，就直接报错退出，整个事务回滚。正常快照约有 4000 条。
+快照文件损坏或为空时，这一步会删光整张 `poi` 表。因此导入器会在执行删除前检查：如果范围过滤后的 POI 少于 1000 条，就直接报错退出，整个事务回滚。正常快照约有 4000 条。
 
 ```sql
 CREATE TEMP TABLE snapshot_keys (osm_type char(1), osm_id bigint) ON COMMIT DROP;
--- 用 COPY 把本次快照中所有 POI 的 (osm_type, osm_id) 写入临时表
+-- 用 COPY 把范围过滤后所有 POI 的 (osm_type, osm_id) 写入临时表
 DELETE FROM poi p
 WHERE NOT EXISTS (
     SELECT 1 FROM snapshot_keys k

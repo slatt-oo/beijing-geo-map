@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
@@ -192,5 +194,33 @@ func TestSuccessfulAPIRequestsAreLoggedAtInfo(t *testing.T) {
 
 	if !strings.Contains(logs.String(), `"path":"/api/v1/poi-categories"`) || !strings.Contains(logs.String(), `"status":200`) {
 		t.Fatalf("successful API request must be logged at info level:\n%s", logs)
+	}
+}
+
+func TestClientCanceledRequestsAreNotLoggedAsErrors(t *testing.T) {
+	logs := captureLogs(t)
+	r := newTestRouter(&fakeDistrictService{}, &fakePOIService{err: context.Canceled})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/pois/42", nil).WithContext(ctx))
+
+	if rec.Code != statusClientClosedRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, statusClientClosedRequest)
+	}
+	if strings.Contains(logs.String(), `"level":"ERROR"`) {
+		t.Fatalf("a client cancellation must not be logged as an error:\n%s", logs)
+	}
+}
+
+func TestCanceledErrorsWithoutClientCancellationStayInternal(t *testing.T) {
+	logs := captureLogs(t)
+
+	rec := get(t, newTestRouter(&fakeDistrictService{}, &fakePOIService{err: context.Canceled}), "/api/v1/pois/42", nil)
+
+	assertErrorResponse(t, rec, http.StatusInternalServerError, CodeInternal, "服务器内部错误")
+	if !strings.Contains(logs.String(), `"level":"ERROR"`) {
+		t.Fatalf("a cancellation the client did not cause must be logged as an error:\n%s", logs)
 	}
 }

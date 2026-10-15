@@ -9,6 +9,7 @@
     "types": ["vite/client"],
     "strict": true,
     "noEmit": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,

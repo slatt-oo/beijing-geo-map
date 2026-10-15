@@ -6,6 +6,7 @@
   {"type":"node","id":1002,"lat":40.02,"lon":116.02,"tags":{"railway":"station","station":"subway","name":"测试站"}},
   {"type":"node","id":1003,"lat":40.0205,"lon":116.0205,"tags":{"public_transport":"station","subway":"yes","name":"测试站"}},
   {"type":"node","id":1004,"lat":41.0,"lon":117.0,"tags":{"tourism":"museum","name":"区外博物馆"}},
+  {"type":"relation","id":3002,"center":{"lat":35.72,"lon":107.93},"tags":{"tourism":"attraction","name":"远处长城"}},
   {"type":"node","id":1005,"lat":40.05,"lon":116.12,"tags":{"amenity":"hospital"}},
   {"type":"node","id":1006,"lat":40.05,"lon":116.13,"tags":{"shop":"supermarket","name":"不相关超市"}}
 ]}

@@ -89,10 +89,11 @@ func TestRunLoadsFixtureSnapshot(t *testing.T) {
 	stats := runImport(t, pool, fixtureDir, 1)
 
 	want := importer.Stats{
-		Districts:        2,
-		POIs:             6,
-		POIsWithDistrict: 5,
-		POIsByCategory:   map[string]int{"subway_station": 1, "university": 1, "attraction": 2, "hospital": 1, "park": 1},
+		Districts:            2,
+		POIs:                 6,
+		POIsWithDistrict:     5,
+		POIsByCategory:       map[string]int{"subway_station": 1, "university": 1, "attraction": 2, "hospital": 1, "park": 1},
+		SkippedOutsideRegion: 1,
 	}
 	if !reflect.DeepEqual(stats, want) {
 		t.Fatalf("stats = %+v, want %+v", stats, want)
@@ -249,6 +250,14 @@ func TestRunImportsRealSnapshot(t *testing.T) {
 		if stats.POIsByCategory[code] == 0 {
 			t.Errorf("no POIs imported for category %s", code)
 		}
+	}
+	var greatWall int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM poi WHERE osm_type = 'r' AND osm_id = 318110`).Scan(&greatWall); err != nil {
+		t.Fatalf("count r318110: %v", err)
+	}
+	if stats.SkippedOutsideRegion == 0 || greatWall != 0 {
+		t.Errorf("skipped = %d, r318110 stored = %d: the Great Wall relation centred about 800 km away must be skipped",
+			stats.SkippedOutsideRegion, greatWall)
 	}
 	var totalArea float64
 	if err := pool.QueryRow(context.Background(), `SELECT sum(area_km2)::float8 FROM district`).Scan(&totalArea); err != nil {

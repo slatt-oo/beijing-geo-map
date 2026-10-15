@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -37,8 +38,14 @@ func writeInternal(c *gin.Context) {
 	writeError(c, http.StatusInternalServerError, CodeInternal, internalErrorMessage)
 }
 
+// statusClientClosedRequest 沿用 nginx 的约定，表示客户端在响应之前断开了连接（前端移动地图后会取消上一次查询）。
+// 这个状态码只出现在访问日志里，客户端收不到。
+const statusClientClosedRequest = 499
+
 const geoJSONContentType = "application/geo+json"
 
+// writeGeoJSON 不用 c.Data：c.Data 会先设置 Content-Length，gin-contrib/gzip 看到小于 1 KB 的 Content-Length 时
+// 直接写出未压缩的内容，却不删除已经加上的 Content-Encoding: gzip，浏览器解码就会失败。
 func writeGeoJSON(c *gin.Context, v any) {
 	body, err := json.Marshal(v)
 	if err != nil {
@@ -46,7 +53,9 @@ func writeGeoJSON(c *gin.Context, v any) {
 		writeInternal(c)
 		return
 	}
-	c.Data(http.StatusOK, geoJSONContentType, body)
+	c.Header("Content-Type", geoJSONContentType)
+	c.Status(http.StatusOK)
+	_, _ = c.Writer.Write(body)
 }
 
 func writeParamError(c *gin.Context, err error) {
@@ -61,6 +70,8 @@ func writeServiceError(c *gin.Context, err error, notFoundMessage string) {
 		writeError(c, http.StatusBadRequest, CodeInvalidParam, "未知的分类编码："+unknown.Code)
 	case notFoundMessage != "" && errors.Is(err, service.ErrNotFound):
 		writeError(c, http.StatusNotFound, CodeNotFound, notFoundMessage)
+	case errors.Is(err, context.Canceled) && c.Request.Context().Err() != nil:
+		c.AbortWithStatus(statusClientClosedRequest)
 	default:
 		slog.ErrorContext(c.Request.Context(), "request failed", "path", c.Request.URL.Path, "err", err)
 		writeInternal(c)

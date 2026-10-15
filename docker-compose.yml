@@ -61,6 +61,8 @@ services:
       context: ./frontend
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+        VITE_TILE_URL: ${VITE_TILE_URL:-}
+        VITE_TILE_CRS: ${VITE_TILE_CRS:-gcj02}
     ports:
       - "${FRONTEND_PORT:-8080}:80"
     depends_on:

@@ -37,7 +37,7 @@ beijing-geo-map/
 ├── .env.example                # 所有可配置项及默认值
 ├── Makefile                    # 常用命令入口
 ├── .github/workflows/ci.yml
-├── docs/                       # 实现文档、技术方案、数据库设计
+├── docs/                       # 实现文档、技术方案、数据库设计、各阶段验收截图（screenshots/）
 ├── testdata/
 │   └── coord_cases.json        # 前后端共享的坐标转换测试样例
 ├── data/
@@ -72,12 +72,13 @@ beijing-geo-map/
     ├── Dockerfile              # 多阶段构建：Node 构建，nginx 运行
     └── src/
         ├── main.tsx / App.tsx
-        ├── api/                # fetch 封装、类型定义、TanStack Query hooks
-        ├── lib/                # coord.ts、geojson.ts、bbox.ts 等纯函数
-        ├── map/                # 底图样式、地图实例 hook、各图层
+        ├── config.ts           # 底图地址、坐标转换函数、初始视野和地图可视范围
+        ├── api/                # fetch 封装、接口类型、TanStack Query hooks
+        ├── lib/                # coord.ts、geojson.ts、bbox.ts、tiles.ts 等纯函数
+        ├── map/                # 地图实例、图层定义、各图层组件、点击分发、POI 弹窗
         ├── store/              # Zustand 全局状态
-        ├── hooks/              # useGeolocation、useDebounce
-        └── components/         # 搜索框、分类筛选、面板、按钮、弹窗
+        ├── hooks/              # useGeolocation、useDebounce（阶段 4）
+        └── components/         # 分类开关、区详情面板、POI 详情卡片、错误提示条
 ```
 
 ## 3. 运行与配置
@@ -107,7 +108,7 @@ beijing-geo-map/
 | `GOPROXY` | backend 镜像构建 | `https://goproxy.cn,direct` | Go 模块代理；CI 中设为 `https://proxy.golang.org,direct` |
 | `NPM_REGISTRY` | frontend 镜像构建 | `https://registry.npmjs.org/` | npm 源；国内可以改为 `https://registry.npmmirror.com/` |
 
-`VITE_*` 变量在构建时就写进前端代码，所以要通过 Docker 的 `build.args` 传入。
+`VITE_*` 变量在构建时就写进前端代码，所以要通过 Docker 的 `build.args` 传入。根目录 `.env` 中的 `VITE_TILE_URL`、`VITE_TILE_CRS` 只在构建镜像时生效；本地开发模式（`make run-frontend`）下要写在 `frontend/.env` 中，或者写在命令前面，例如在 `frontend/` 目录下运行 `VITE_TILE_CRS=wgs84 npm run dev`。
 
 ### 3.3 本地开发模式
 
@@ -149,7 +150,7 @@ GCJ-02 是在 WGS-84 的基础上做了非线性偏移，在北京偏移量大�
 |---|---|
 | 数据库、后端接口 | 一律 WGS-84 |
 | 导入时 | DataV 边界在导入阶段由 Go 从 GCJ-02 转成 WGS-84；OSM 数据本来就是 WGS-84，无需转换 |
-| 前端显示 | 由 `src/lib/coord.ts` 一个模块负责所有转换 |
+| 前端显示 | 算法在 `src/lib/coord.ts`；`src/config.ts` 按 `VITE_TILE_CRS` 导出 `toDisplay()` / `toData()`，其他模块只通过这两个函数转换 |
 
 前端的转换只发生在两个出入口：
 
@@ -169,7 +170,7 @@ GCJ-02 是在 WGS-84 的基础上做了非线性偏移，在北京偏移量大�
 
 ### 4.4 前后端一致性
 
-Go 的 `internal/geo` 和前端的 `coord.ts` 实现同一套算法，并且都读取仓库根目录下的 `testdata/coord_cases.json`。样例文件中每条记录包含名称、WGS-84 坐标和 GCJ-02 坐标，覆盖天安门、鸟巢、北京大学、首都机场，以及一个中国境外的点。
+Go 的 `internal/geo` 和前端的 `coord.ts` 实现同一套算法，并且都读取仓库根目录下的 `testdata/coord_cases.json`。样例文件中每条记录包含名称、WGS-84 坐标和 GCJ-02 坐标，覆盖天安门、鸟巢、北京大学、首都机场，以及东、西、南、北四个方向的中国境外点（东京、塔什干、雅加达、雅库茨克）。前端的反向转换与 Go 的循环逐步一致：每轮都调用带境外判断的正向转换。
 
 样例值由广泛使用的开源库 [gcoord](https://github.com/hujiulong/gcoord) 生成，文件中会注明它的版本号。断言容差为：正向 `1e-6` 度；反向是 `forward(inverse(g))` 与 `g` 相差小于 `1e-6` 度。
 
@@ -212,6 +213,8 @@ Go 的 `internal/geo` 和前端的 `coord.ts` 实现同一套算法，并且都�
 | `NOT_FOUND` | 404 | 资源不存在 |
 | `INTERNAL` | 500 | 未预期的错误，包括请求超过 5 秒超时。详细原因只写进日志，返回给前端的 message 固定为「服务器内部错误」 |
 | `UNAVAILABLE` | 503 | 健康检查时数据库不可用 |
+
+客户端在响应之前断开连接时（例如前端移动地图后取消了上一次查询），访问日志中的状态码记为 499（沿用 nginx 的约定），不写错误日志；客户端本身收不到这个响应。
 
 ### 5.4 接口清单
 
@@ -321,10 +324,10 @@ Go 的 `internal/geo` 和前端的 `coord.ts` 实现同一套算法，并且都�
 1. **执行迁移**：用 golang-migrate 读取嵌入二进制的 SQL 文件，并升级到最新版本。
 2. **在同一个事务内**完成以下步骤，任何一步失败都会整体回滚：
    1. **导入行政区**：解析 DataV 的 `FeatureCollection`。在 Go 里把每个坐标从 GCJ-02 转成 WGS-84，然后交给 SQL 完成修复和计算：`ST_MakeValid` 修复转换后可能出现的自相交，`ST_Multi(ST_CollectionExtract(..., 3))` 统一成 MultiPolygon，`ST_PointOnSurface` 计算标注点（保证落在面内），`ST_Area(geom::geography)` 计算面积。最后按 `adcode` upsert。
-   2. **导入 POI**：解析 Overpass 返回的 JSON。节点取 `lat`/`lon`，线和关系取 `center`。然后依次进行分类映射、名称选择和地铁站去重，最后按 `(osm_type, osm_id)` upsert。
-   3. **同步删除**：把本次快照中所有 POI 的键写入临时表，删除数据库中存在、但快照里已经没有的 POI。快照解析出的 POI 少于 1000 条时，导入器直接报错退出，防止因为快照损坏而误删全部数据。
+   2. **导入 POI**：解析 Overpass 返回的 JSON。节点取 `lat`/`lon`，线和关系取 `center`。然后依次进行分类映射、名称选择和地铁站去重，再丢弃坐标落在北京市边界外扩约 1° 范围（经度 114.4 到 118.5，纬度 38.4 到 42.1）以外的 POI，最后按 `(osm_type, osm_id)` upsert。OSM 中少数要素的中心点远在北京之外，例如整条长城的 relation，中心点在甘肃；清河农场飞地（北京管辖、位于天津境内）的 POI 仍在范围内，会保留。前端地图的可视范围与这个范围相同。
+   3. **同步删除**：把范围过滤后所有 POI 的键写入临时表，删除数据库中不在其中的 POI：快照里已经没有的，以及落在范围外的。范围过滤后的 POI 少于 1000 条时，导入器直接报错退出，防止因为快照损坏而误删全部数据。
    4. **重算 `district_id`**：用一条 `UPDATE` 同时完成分配和清空：每个 POI 取包含它的区（多个区都包含时取 `adcode` 最小的，保证重复导入的结果稳定），不在任何区内的置为 `NULL`。
-3. 输出统计信息：各表行数、各分类数量、`district_id` 填充率。
+3. 输出统计信息：各表行数、各分类数量、`district_id` 填充率、同步删除的数量，以及因落在范围外而丢弃的数量。
 
 **分类映射规则**：按下表顺序匹配，命中第一条就停止。
 
@@ -390,51 +393,54 @@ Zustand store 中保存的状态：
 
 | 字段 | 含义 |
 |---|---|
-| `enabledCategories` | 当前开启的 POI 分类 |
-| `selectedDistrict` | 当前选中的区 |
-| `myLocation` | 我的位置，格式为 `{lng, lat, accuracy}`，WGS-84 |
-| `nearby` | 附近查询的中心和半径，格式为 `{center, radius}` 或 `null` |
-| `mode` | 当前模式：`normal`（普通）或 `pickLocation`（在地图上点选位置） |
+| `hiddenCategories` | 当前关闭的 POI 分类编码，为空表示全部开启。记录关闭的而不是开启的分类，这样分类列表加载完成之前也有确定的状态 |
+| `selectedDistrict` | 当前选中的区（`adcode`） |
 | `activePoiId` | 当前打开详情弹窗的 POI |
+| `errorMessage` | 右上角提示条显示的错误信息 |
+| `myLocation` | 我的位置，格式为 `{lng, lat, accuracy}`，WGS-84（阶段 4） |
+| `nearby` | 附近查询的中心和半径，格式为 `{center, radius}` 或 `null`（阶段 4） |
+| `mode` | 当前模式：`normal`（普通）或 `pickLocation`（在地图上点选位置）（阶段 4） |
 
 ### 6.2 页面布局
 
 - 地图占满全屏。
-- 左上角：搜索框。
-- 左侧：浮动面板，显示区详情或附近查询结果，两者互斥。
+- 左上角：搜索框（阶段 4）。
+- 左侧：浮动面板，显示区详情或附近查询结果（阶段 4），两者互斥。
 - 右上角：分类开关，用分类颜色标识。
-- 右下角：「定位」和「附近」两个按钮。
-- 右下角底部：数据署名，「© OpenStreetMap contributors · 底图 © 高德」。
+- 右下角：「定位」和「附近」两个按钮（阶段 4）。
+- 右下角底部：MapLibre 的署名控件显示各数据源的署名：「底图 © 高德地图」「行政区划 © 阿里云 DataV.GeoAtlas」「© OpenStreetMap contributors（ODbL）」。
 
 ### 6.3 图层（从下往上）
 
 | 图层 | 数据源 | 说明 |
 |---|---|---|
 | `basemap` | 高德栅格瓦片 | `tiles` 中列出 `webrd01` 到 `webrd04` 四个子域名 |
-| `district-fill` | `/districts` | 半透明填充，悬停时通过 `feature-state` 加深；数据源设置 `promoteId: "adcode"` |
+| `district-fill` | `/districts` | 半透明填充，悬停和选中时通过 `feature-state` 加深；数据源设置 `promoteId: "adcode"` |
 | `district-line` / `district-label` | 同上 | 边线；区名标注在 `center` 位置 |
-| `nearby-circle` | 前端计算 | 用 `@turf/circle` 生成 64 边形，显示查询范围 |
+| `nearby-circle` | 前端计算 | 用 `@turf/circle` 生成 64 边形，显示查询范围（阶段 4） |
 | `poi-cluster` / `poi-cluster-count` | `/pois` | 设置 `cluster: true`，聚合半径 50 像素，最大聚合级别 14 |
 | `poi-point` | 同上 | 用分类颜色的圆点表示，颜色通过 `match` 表达式根据 `category` 取值 |
-| `my-location` | store | 蓝色圆点，以及根据 `accuracy` 换算成像素半径的精度圈 |
+| `my-location` | store | 蓝色圆点，以及根据 `accuracy` 换算成像素半径的精度圈（阶段 4） |
 
 所有数据在调用 `setData` 之前都要经过 `toDisplay()`，由 `lib/geojson.ts` 递归转换 GeoJSON 中的每个坐标。
+
+所有数据源和图层在地图的 `style.load` 事件里一次建好（数据先为空），保证从下到上的顺序固定，之后只通过 `setData`、`setPaintProperty` 和 `setFeatureState` 更新。`style.load` 在样式解析完成、开始请求瓦片之前触发；如果等 `load`，就要等首屏所有底图瓦片加载完，接口请求会排在瓦片之后。区名标注使用单独的点数据源，由 `/districts` 返回的 `center` 生成。样式中不配置 `glyphs`：MapLibre 6 在没有字形地址时用浏览器本地字体绘制文字，区名和聚合数字都不依赖外部字形服务。
 
 ### 6.4 各功能的交互流程
 
 **F1 行政区**
 
 1. 页面首次加载时请求一次 `/districts`，结果长期缓存。
-2. 鼠标移入时设置 `hover` 状态并显示区名提示。
-3. 点击时用 `fitBounds` 缩放到该区，然后请求 `/districts/{adcode}`，在面板中展示面积和各分类数量。
+2. 鼠标移入时设置 `hover` 状态，并在鼠标旁显示区名提示。
+3. 点击时设置 `selected` 状态，用 `fitBounds` 缩放到该区（左侧给面板留出边距），然后请求 `/districts/{adcode}`，在面板中展示面积和各分类数量。点击北京以外的地方会取消选中。
 
 **F3 POI**
 
 1. 地图 `moveend` 事件触发后防抖 300ms。
-2. 取当前视野范围，经过 `toData()` 转换后请求 `/pois`。
-3. 请求参数（bbox 和分类）作为 TanStack Query 的缓存键，视野回到之前的位置时直接使用缓存。
-4. 点击聚合圆时调用 `getClusterExpansionZoom` 放大。
-5. 点击单个点时请求 `/pois/{id}`，并在 maplibre `Popup` 中通过 React portal 渲染详情。
+2. 取当前视野的四个角，分别经过 `toData()` 转换后取外包框，向外取整到 0.001°（约 100 米），再请求 `/pois`。`limit` 固定为 5000：当前约 4100 个 POI，全市视野也不会被截断，聚合数字才准确。
+3. 请求参数（bbox 和分类）作为 TanStack Query 的缓存键，视野回到之前的位置时直接使用缓存；换视野时先保留旧数据，新数据到达后再替换。分类全部关闭时不发请求，直接清空图层。
+4. 点击统一由一个处理函数分发：先查 POI 图层，再查区图层，所以点击区内的 POI 不会同时选中区。点击聚合圆时调用 `getClusterExpansionZoom` 放大；点到 POI 以外的地方会关闭详情弹窗。
+5. 点击单个点时请求 `/pois/{id}`，并在 maplibre `Popup` 中通过 React portal 渲染详情：名称、英文名、分类、所在区和 OSM 链接。地址由 OSM 标签拼接而成，质量参差不齐，第一版不显示。
 6. 结果被截断时（`truncated`），提示「当前范围数据过多，请放大地图」。
 
 **F2 我的位置**
@@ -462,7 +468,15 @@ Zustand store 中保存的状态：
 
 ### 6.5 接口调用封装
 
-`api/client.ts` 封装 `fetch`，负责拼接查询参数、解析 `{"error": ...}` 并抛出带 `code` 的 `ApiError`。`api/queries.ts` 为每个接口提供一个 TanStack Query hook。界面统一把错误显示为右上角的提示条，不会白屏。
+`api/client.ts` 封装 `fetch`，负责拼接查询参数、解析 `{"error": ...}` 并抛出带 `code` 的 `ApiError`。`api/queries.ts` 为每个接口提供一个 TanStack Query hook。所有查询的错误由 `QueryCache` 的 `onError` 统一写入 store，界面在右上角（分类开关上方）显示提示条，不会白屏。
+
+### 6.6 地图工程细节
+
+- **Web Worker 地址**：MapLibre 6 在运行时根据 `import.meta.url` 拼出 worker 文件的地址，打包后这个文件并不存在。因此用 `import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'` 让 Vite 输出 worker 文件，再调用 `setWorkerUrl(workerUrl)`。
+- **`.mjs` 的 MIME 类型**：nginx 自带的 `mime.types` 不认识 `.mjs`，会按 `application/octet-stream` 返回，浏览器拒绝把它当作模块加载。`nginx.conf` 在 `/assets/` 下为 `.mjs` 单独声明 `application/javascript`。
+- **可视范围**：地图的 `maxBounds` 是北京市边界外扩约 1° 的范围（经度 114.4 到 118.5，纬度 38.4 到 42.1，WGS-84，换算到底图坐标系后使用）。导入器用同一个范围过滤 POI，见 5.5 节。
+- **地址栏中的地图位置**：开启 MapLibre 的 `hash` 选项，地图位置写在地址栏中（`#缩放级别/纬度/经度`，底图坐标系），刷新或分享链接时回到同一视野。开发模式下 React StrictMode 会把地图创建两次，第一次销毁时会清掉地址里的位置，所以开发模式下打开带位置的链接不生效，生产构建不受影响。
+- **容器尺寸**：`maplibre-gl.css` 会给地图容器加上 `position: relative`，所以容器用 `h-full w-full` 撑满父元素，而不是 `absolute inset-0`。
 
 ## 7. 测试策略
 
@@ -471,9 +485,9 @@ Zustand store 中保存的状态：
 | 类型 | 范围 | 运行方式 |
 |---|---|---|
 | 单元测试 | `internal/geo`：读取共享样例，验证正向转换、反向转换和境外点 | `go test ./...` |
-| 单元测试 | `internal/handler`：`httptest` 加假的 service，覆盖每个接口的参数校验、错误码和响应结构 | 同上 |
+| 单元测试 | `internal/handler`：`httptest` 加假的 service，覆盖每个接口的参数校验、错误码和响应结构，以及小于 1 KB 的 GeoJSON 不带 gzip 标记、客户端取消的请求记为 499 | 同上 |
 | 单元测试 | `internal/service`：假的 repository，覆盖分类编码与 ID 的映射、GeoJSON 和返回结构的组装（空结果输出 `[]` 而不是 `null`） | 同上 |
-| 单元测试 | `internal/importer`：分类映射、名称选择、地铁站去重，使用小型 JSON 测试数据 | 同上 |
+| 单元测试 | `internal/importer`：分类映射、名称选择、地铁站去重、北京范围过滤，使用小型 JSON 测试数据 | 同上 |
 | 集成测试 | `migrations`、`internal/importer`、`internal/repository`，以及 `internal/handler` 的端到端测试（真实的 handler、service、repository 串起来请求接口），连接真实的 PostGIS（构建标签 `integration`） | `make test-integration`，或手动设置 `TEST_DATABASE_URL` 后运行 `go test -tags=integration ./...` |
 
 集成测试带 `integration` 构建标签，通过 `internal/testdb` 为每个测试包创建独立的 `geo_test_<name>` 数据库。repository 和导入器的测试各自使用一份人造数据：两个相邻的正方形「区」，以及若干分布在区内和区外的点；handler 的端到端测试先用导入器导入导入器的那份人造数据，再请求各接口。导入器的测试还会导入真实快照，校验区的数量、POI 数量和所属区匹配率。覆盖以下场景：
@@ -485,12 +499,13 @@ Zustand store 中保存的状态：
 - 搜索：`%` 和 `_` 被正确转义，中文三元组可用（`show_trgm('北京大学')` 返回非空）。
 - `district_id` 重算正确。
 - 重复导入后行数不变，快照中删除的 POI 会被同步删除。
+- 落在北京范围外的 POI 不导入（真实快照中整条长城的 relation 被丢弃）。
 
 ### 7.2 前端
 
 | 类型 | 范围 |
 |---|---|
-| Vitest 单元测试 | `lib/coord.ts`（读取同一份共享样例）、`lib/geojson.ts` 的递归坐标转换、`lib/bbox.ts`、`api/client.ts` 的参数拼接和错误解析 |
+| Vitest 单元测试 | `lib/coord.ts`（读取同一份共享样例）、`lib/geojson.ts` 的递归坐标转换、`lib/bbox.ts`、`lib/tiles.ts`、`lib/categories.ts`、`lib/format.ts`、`store/useAppStore.ts`、`api/client.ts` 的参数拼接和错误解析、`api/queries.ts` 的查询键和跳过条件（用 TanStack Query 的 `QueryObserver` 在 Node 中运行）。地图图层组件依赖 WebGL，不写单元测试，逻辑尽量放进上面这些纯函数 |
 | 手工验证 | 见第 10 节清单。阶段 3 和阶段 4 完成后，在浏览器中逐项操作并截图 |
 
 第一版不编写浏览器端到端测试。
@@ -512,7 +527,7 @@ README 顶部挂 CI 状态徽章。
 - **SQL**：所有 SQL 都使用参数化查询，不拼接字符串。搜索时的通配符转义在 Go 中完成，结果依然作为参数传入。
 - **数据库凭据**：只出现在 `.env` 中，`.env` 已加入 `.gitignore`。`.env.example` 中的默认值仅用于本地 Demo。
 - **错误信息**：500 错误不向前端返回内部信息。
-- **数据署名**：界面右下角和 README 中都注明「© OpenStreetMap contributors（ODbL）」、「行政区划数据来自阿里云 DataV.GeoAtlas」、「底图 © 高德地图」。
+- **数据署名**：界面右下角显示「底图 © 高德地图」「行政区划 © 阿里云 DataV.GeoAtlas」「© OpenStreetMap contributors（ODbL）」，README 的「数据来源与声明」一节也逐项注明。
 - **底图声明**：README 中声明高德公开瓦片地址不是官方开放接口，本项目仅用于学习和非商业演示。
 
 ## 10. 手工验证清单
