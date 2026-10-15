@@ -78,7 +78,7 @@ beijing-geo-map/
         ├── map/                # 地图实例、图层定义、各图层组件、点击分发、POI 弹窗、右键菜单
         ├── store/              # Zustand 全局状态；定位流程（locate.ts，失败时转入点选）
         ├── hooks/              # useDebounce
-        └── components/         # 搜索框、区详情面板、附近面板、POI 详情卡片、分类开关、定位和附近按钮、点选提示、提示条
+        └── components/         # 搜索框、区详情面板、附近面板、POI 详情卡片、分类开关、定位和附近按钮、点选提示、提示条、页面级错误边界
 ```
 
 ## 3. 运行与配置
@@ -103,12 +103,13 @@ beijing-geo-map/
 | `DATA_DIR` | seed | `/data` | 数据快照所在目录 |
 | `TEST_DATABASE_URL` | 集成测试 | 无（`make test-integration` 会自动设置） | 管理连接串。测试会在同一个服务器上创建并使用 `geo_test_<name>` 数据库（name 由各测试包指定），不会改动开发库 |
 | `VITE_TILE_URL` | frontend（构建时） | 高德瓦片地址 | 底图瓦片模板，`{s}` 会展开为 1 到 4 号子域名 |
-| `VITE_TILE_CRS` | frontend（构建时） | `gcj02` | 底图坐标系；设为 `wgs84` 时关闭坐标转换 |
+| `VITE_TILE_CRS` | frontend（构建时） | `gcj02` | 底图坐标系；设为 `wgs84` 时关闭坐标转换。只能是这两个值，否则前端构建失败 |
+| `VITE_TILE_ATTRIBUTION` | frontend（构建时） | `底图 © 高德地图` | 地图右下角的底图署名，更换底图时一并修改 |
 | `DB_PORT` / `FRONTEND_PORT` | compose；Makefile 也读取 DB_PORT | `5432` / `8080` | 映射到宿主机的端口 |
 | `GOPROXY` | backend 镜像构建 | `https://goproxy.cn,direct` | Go 模块代理；CI 中设为 `https://proxy.golang.org,direct` |
 | `NPM_REGISTRY` | frontend 镜像构建 | `https://registry.npmjs.org/` | npm 源；国内可以改为 `https://registry.npmmirror.com/` |
 
-`VITE_*` 变量在构建时就写进前端代码，所以要通过 Docker 的 `build.args` 传入。根目录 `.env` 中的 `VITE_TILE_URL`、`VITE_TILE_CRS` 只在构建镜像时生效；本地开发模式（`make run-frontend`）下要写在 `frontend/.env` 中，或者写在命令前面，例如在 `frontend/` 目录下运行 `VITE_TILE_CRS=wgs84 npm run dev`。
+`VITE_*` 变量在构建时就写进前端代码，所以要通过 Docker 的 `build.args` 传入。根目录 `.env` 中的 `VITE_TILE_URL`、`VITE_TILE_CRS`、`VITE_TILE_ATTRIBUTION` 只在构建镜像时生效；本地开发模式（`make run-frontend`）下要写在 `frontend/.env` 中，或者写在命令前面，例如在 `frontend/` 目录下运行 `VITE_TILE_CRS=wgs84 npm run dev`。
 
 ### 3.3 本地开发模式
 
@@ -409,6 +410,7 @@ Zustand store 中保存的状态：
 - 地图占满全屏。
 - 左上角：搜索框，下面是浮动面板，显示区详情或附近查询结果，两者互斥：打开附近查询会取消选中的区；附近面板打开时，点击地图不会选中区，要查看区详情需要先关闭附近面板。搜索框和面板宽 320 像素，地图缩放到某个区或查询范围时，左侧留出 360 像素的边距。
 - 右上角：提示条，下面是分类开关，用分类颜色标识。
+- 顶部中间：POI 请求较慢时提示「正在加载 POI…」，结果被截断时提示「当前范围数据过多，请放大地图」。
 - 右下角：「定位」和「附近」两个按钮。
 - 底部中间：点选位置模式的提示和「取消」按钮。
 - 右下角底部：MapLibre 的署名控件显示各数据源的署名：「底图 © 高德地图」「行政区划 © 阿里云 DataV.GeoAtlas」「© OpenStreetMap contributors（ODbL）」。
@@ -444,7 +446,7 @@ Zustand store 中保存的状态：
 3. 请求参数（bbox 和分类）作为 TanStack Query 的缓存键，视野回到之前的位置时直接使用缓存；换视野时先保留旧数据，新数据到达后再替换。分类全部关闭时不发请求，直接清空图层。
 4. 点击统一由一个处理函数分发，判断规则在 `lib/clickRoute.ts`：点选位置模式下任何点击都用来设置位置；否则先查 POI 图层，再查区图层，所以点击区内的 POI 不会同时选中区。点击聚合圆时调用 `getClusterExpansionZoom` 放大；点到 POI 以外的地方会关闭详情弹窗；附近面板打开时，这样的点击只关闭弹窗，不会选中区，以免丢掉附近结果。
 5. 点击单个点时请求 `/pois/{id}`，并在 maplibre `Popup` 中通过 React portal 渲染详情：名称、英文名、分类、所在区和 OSM 链接。地址由 OSM 标签拼接而成，质量参差不齐，第一版不显示。
-6. 结果被截断时（`truncated`），提示「当前范围数据过多，请放大地图」。
+6. 结果被截断时（`truncated`），提示「当前范围数据过多，请放大地图」。请求超过 400 毫秒还没有返回时，同一位置改为提示「正在加载 POI…」；本地请求通常几十毫秒就返回，不会每次移动地图都闪一下。
 
 **F2 我的位置**
 
@@ -456,7 +458,7 @@ Zustand store 中保存的状态：
 **F4 搜索**
 
 1. 输入防抖 300ms，然后请求 `/pois/search`（`limit=10`）。输入为空时不请求；输入框最多 50 个字符，与接口的限制一致。
-2. 下拉框最多显示 10 条结果，包括名称、分类色块和所在区；支持上下键选择、回车确认（没有选中时取第一条）和 Esc 关闭。没有结果时显示「没有找到相关地点」。
+2. 下拉框最多显示 10 条结果，包括名称、分类色块和所在区；支持上下键选择、回车确认（没有选中时取第一条）和 Esc 关闭。没有结果时显示「没有找到相关地点」；防抖等待和请求进行中显示「搜索中…」，不会把上一个词的空结果当作这个词的结果。
 3. 选中后地图飞到该点（缩放级别 16），并打开详情弹窗。
 
 **F5 附近**
@@ -473,7 +475,20 @@ Zustand store 中保存的状态：
 
 ### 6.5 接口调用封装
 
-`api/client.ts` 封装 `fetch`，负责拼接查询参数、解析 `{"error": ...}` 并抛出带 `code` 的 `ApiError`。`api/queries.ts` 为每个接口提供一个 TanStack Query hook。所有查询的错误由 `QueryCache` 的 `onError` 统一写入 store，界面在右上角（分类开关上方）显示提示条，不会白屏。
+`api/client.ts` 封装 `fetch`，负责拼接查询参数、解析 `{"error": ...}` 并抛出带 `code` 的 `ApiError`。`api/queries.ts` 为每个接口提供一个 TanStack Query hook。
+
+| 情况 | `code` | 提示 |
+|---|---|---|
+| 接口返回标准错误格式 | 接口给出的错误码 | 接口给出的 `message` |
+| 502、503、504，且响应体不是标准错误格式（nginx 连不上后端时返回自己的错误页） | `BACKEND_UNAVAILABLE` | 后端服务未启动或暂时不可用 |
+| 其他不是标准错误格式的错误响应 | `HTTP_ERROR` | 请求失败（HTTP 状态码） |
+| 成功响应的类型不是 `application/json` 或以 `+json` 结尾，或者解析失败 | `BAD_RESPONSE` | 服务器返回了无法识别的内容 |
+| 网络错误 | `NETWORK` | 网络错误，请确认后端服务已启动 |
+
+- 所有查询的错误由 `QueryCache` 的 `onError` 统一写入 store，界面在右上角（分类开关上方）显示提示条，不会白屏。4xx 不自动重试；网络错误、5xx 和无法识别的响应自动重试一次，仍然失败时提示条带「重试」按钮，点击后重新请求所有当前在用且出错的查询。区边界和分类只在首次加载时请求一次（`staleTime` 为 `Infinity`），后端恢复后靠这个按钮恢复，不需要刷新页面。
+- 区详情面板和附近面板加载失败时，面板里也有「重试」按钮。POI 详情加载失败时弹窗不打开，再点一次这个 POI 会重新请求；已经打开的弹窗在后台刷新失败时保留。
+- 底图瓦片加载失败时提示一次「底图加载失败」，不带重试按钮，区边界和 POI 不受影响。
+- 渲染或 effect 中抛出的错误（例如浏览器创建不了 WebGL 上下文，MapLibre 无法初始化）由最外层的错误边界接住，显示中文说明和「刷新页面」按钮，而不是白屏。
 
 ### 6.6 地图工程细节
 
@@ -482,6 +497,7 @@ Zustand store 中保存的状态：
 - **可视范围**：地图的 `maxBounds` 是北京市边界外扩约 1° 的范围（经度 114.4 到 118.5，纬度 38.4 到 42.1，WGS-84，换算到底图坐标系后使用）。导入器用同一个范围过滤 POI，见 5.5 节。
 - **地址栏中的地图位置**：开启 MapLibre 的 `hash` 选项，地图位置写在地址栏中（`#缩放级别/纬度/经度`，底图坐标系），刷新或分享链接时回到同一视野。开发模式下 React StrictMode 会把地图创建两次，第一次销毁时会清掉地址里的位置，所以开发模式下打开带位置的链接不生效，生产构建不受影响。
 - **容器尺寸**：`maplibre-gl.css` 会给地图容器加上 `position: relative`，所以容器用 `h-full w-full` 撑满父元素，而不是 `absolute inset-0`。
+- **静态文件缓存**：Vite 输出的 `/assets/` 文件名带内容哈希，nginx 让浏览器缓存一年（`Cache-Control: public, max-age=31536000, immutable`）；`index.html` 设为 `no-cache`，重新构建部署后浏览器能拿到新版本。nginx 只压缩 1 KB 以上的响应，并带上 `Vary: Accept-Encoding`。
 
 ## 7. 测试策略
 
@@ -490,10 +506,11 @@ Zustand store 中保存的状态：
 | 类型 | 范围 | 运行方式 |
 |---|---|---|
 | 单元测试 | `internal/geo`：读取共享样例，验证正向转换、反向转换和境外点 | `go test ./...` |
-| 单元测试 | `internal/handler`：`httptest` 加假的 service，覆盖每个接口的参数校验、错误码和响应结构，以及小于 1 KB 的 GeoJSON 不带 gzip 标记、客户端取消的请求记为 499 | 同上 |
+| 单元测试 | `internal/handler`：`httptest` 加假的 service，覆盖每个接口的参数校验、错误码和响应结构，以及小于 1 KB 的 GeoJSON 不带 gzip 标记、客户端取消的请求记为 499、请求超时按 500 记录错误日志 | 同上 |
 | 单元测试 | `internal/service`：假的 repository，覆盖分类编码与 ID 的映射、GeoJSON 和返回结构的组装（空结果输出 `[]` 而不是 `null`） | 同上 |
 | 单元测试 | `internal/importer`：分类映射、名称选择、地铁站去重、北京范围过滤，使用小型 JSON 测试数据 | 同上 |
-| 集成测试 | `migrations`、`internal/importer`、`internal/repository`，以及 `internal/handler` 的端到端测试（真实的 handler、service、repository 串起来请求接口），连接真实的 PostGIS（构建标签 `integration`） | `make test-integration`，或手动设置 `TEST_DATABASE_URL` 后运行 `go test -tags=integration ./...` |
+| 单元测试 | `internal/config`：默认值、环境变量覆盖、必填项和日志级别校验；`migrations`：拒绝不是 PostgreSQL 的连接串 | 同上 |
+| 集成测试 | `migrations`、`internal/importer`、`internal/repository`、`internal/testdb`（管理连接串的处理），以及 `internal/handler` 的端到端测试（真实的 handler、service、repository 串起来请求接口），连接真实的 PostGIS（构建标签 `integration`） | `make test-integration`，或手动设置 `TEST_DATABASE_URL` 后运行 `go test -tags=integration ./...` |
 
 集成测试带 `integration` 构建标签，通过 `internal/testdb` 为每个测试包创建独立的 `geo_test_<name>` 数据库。repository 和导入器的测试各自使用一份人造数据：两个相邻的正方形「区」，以及若干分布在区内和区外的点；handler 的端到端测试先用导入器导入导入器的那份人造数据，再请求各接口。导入器的测试还会导入真实快照，校验区的数量、POI 数量和所属区匹配率。覆盖以下场景：
 
@@ -510,8 +527,8 @@ Zustand store 中保存的状态：
 
 | 类型 | 范围 |
 |---|---|
-| Vitest 单元测试 | `lib/coord.ts`（读取同一份共享样例）、`lib/geojson.ts` 的递归坐标转换、`lib/bbox.ts`、`lib/tiles.ts`、`lib/categories.ts`、`lib/format.ts`、`lib/circle.ts`、`lib/clickRoute.ts` 的点击分发规则、`lib/geolocation.ts`、`lib/search.ts`、`store/useAppStore.ts`、`store/locate.ts` 的定位流程（`lib/geolocation.ts` 和 `store/locate.ts` 用假的 `Geolocation` 对象）、`map/layers.ts` 的图层顺序（用只记录调用的假地图）、`api/client.ts` 的参数拼接、错误解析和 `data` 解包、`api/queries.ts` 的查询键和跳过条件（用 TanStack Query 的 `QueryObserver` 在 Node 中运行）。其他地图图层组件依赖 WebGL，不写单元测试，逻辑尽量放进上面这些纯函数 |
-| 手工验证 | 见第 10 节清单。阶段 3 和阶段 4 完成后，在浏览器中逐项操作并截图 |
+| Vitest 单元测试 | `lib/coord.ts`（读取同一份共享样例）、`lib/geojson.ts` 的递归坐标转换、`lib/bbox.ts`、`lib/tiles.ts`、`lib/categories.ts`、`lib/format.ts`、`lib/circle.ts`、`lib/clickRoute.ts` 的点击分发规则、`lib/geolocation.ts`、`lib/search.ts`、`lib/fatalError.ts` 的错误说明、`store/useAppStore.ts`、`store/locate.ts` 的定位流程（`lib/geolocation.ts` 和 `store/locate.ts` 用假的 `Geolocation` 对象）、`map/layers.ts` 的图层顺序（用只记录调用的假地图）和底图样式、`api/client.ts` 的参数拼接、错误解析与分类、`data` 解包和重试判断、`api/queries.ts` 的查询键和跳过条件（用 TanStack Query 的 `QueryObserver` 在 Node 中运行）。其他地图图层组件依赖 WebGL，不写单元测试，逻辑尽量放进上面这些纯函数 |
+| 手工验证 | 见第 10 节清单。阶段 3、4、5 完成后，在浏览器中逐项操作并截图 |
 
 第一版不编写浏览器端到端测试。
 
@@ -532,7 +549,7 @@ README 顶部挂 CI 状态徽章。
 - **SQL**：所有 SQL 都使用参数化查询，不拼接字符串。搜索时的通配符转义在 Go 中完成，结果依然作为参数传入。
 - **数据库凭据**：只出现在 `.env` 中，`.env` 已加入 `.gitignore`。`.env.example` 中的默认值仅用于本地 Demo。
 - **错误信息**：500 错误不向前端返回内部信息。
-- **数据署名**：界面右下角显示「底图 © 高德地图」「行政区划 © 阿里云 DataV.GeoAtlas」「© OpenStreetMap contributors（ODbL）」，README 的「数据来源与声明」一节也逐项注明。
+- **数据署名**：界面右下角显示「底图 © 高德地图」「行政区划 © 阿里云 DataV.GeoAtlas」「© OpenStreetMap contributors（ODbL）」，README 的「数据来源与声明」一节也逐项注明。更换底图时用 `VITE_TILE_ATTRIBUTION` 同时修改底图署名。
 - **底图声明**：README 中声明高德公开瓦片地址不是官方开放接口，本项目仅用于学习和非商业演示。
 
 ## 10. 手工验证清单
@@ -551,3 +568,4 @@ README 顶部挂 CI 状态徽章。
 | 10 | 在地图任意位置右键，选择「以此为中心查附近」 | 以右键点为中心执行附近查询 |
 | 11 | 点选一个北京以外的位置，例如河北廊坊 | 提示「当前位置不在北京市范围内」 |
 | 12 | 执行 `docker compose down -v`，然后执行 `docker compose up --build` | 从零开始启动后，以上各项全部正常 |
+| 13 | 执行 `docker compose stop backend` 后刷新页面；再执行 `docker compose start backend`，点击提示条中的「重试」 | 先提示「后端服务未启动或暂时不可用」；重试后区边界、POI 和分类开关恢复，不需要刷新页面 |
