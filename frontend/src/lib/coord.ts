@@ -1,6 +1,6 @@
-export type LngLat = [number, number]
+import type { TileCrs } from './tiles'
 
-export type TileCrs = 'gcj02' | 'wgs84'
+export type LngLat = [number, number]
 
 export type CoordTransform = {
   toDisplay: (p: LngLat) => LngLat

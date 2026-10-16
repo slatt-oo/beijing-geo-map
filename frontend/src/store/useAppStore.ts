@@ -8,7 +8,8 @@ export type MyLocation = { lng: number; lat: number; accuracy: number | null }
 
 export type Nearby = { center: LngLat; radius: number }
 
-export type Notice = { tone: 'info' | 'error'; message: string }
+// retry 存在时，提示条显示「重试」按钮。
+export type Notice = { tone: 'info' | 'error'; message: string; retry?: () => void }
 
 export const NEARBY_RADII = [500, 1000, 2000, 5000] as const
 
@@ -29,7 +30,7 @@ export type AppState = {
   toggleCategory: (code: string) => void
   selectDistrict: (adcode: string | null) => void
   openPoi: (id: number | null) => void
-  showError: (message: string) => void
+  showError: (message: string, retry?: () => void) => void
   showInfo: (message: string) => void
   dismissNotice: () => void
   startLocating: (request: object) => void
@@ -65,7 +66,7 @@ export const useAppStore = create<AppState>()((set) => ({
   selectDistrict: (adcode) =>
     set((state) => ({ selectedDistrict: adcode, nearby: adcode === null ? state.nearby : null })),
   openPoi: (id) => set({ activePoiId: id }),
-  showError: (message) => set({ notice: { tone: 'error', message } }),
+  showError: (message, retry) => set({ notice: { tone: 'error', message, retry } }),
   showInfo: (message) => set({ notice: { tone: 'info', message } }),
   dismissNotice: () => set({ notice: null }),
   startLocating: (request) => set({ locateRequest: request }),

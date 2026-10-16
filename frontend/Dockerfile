@@ -6,6 +6,7 @@ RUN npm ci --registry=${NPM_REGISTRY}
 COPY . .
 ARG VITE_TILE_URL=
 ARG VITE_TILE_CRS=gcj02
+ARG VITE_TILE_ATTRIBUTION=
 RUN npm run build
 
 FROM nginx:1.29-alpine

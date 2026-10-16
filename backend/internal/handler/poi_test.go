@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/slatt-oo/beijing-geo-map/backend/internal/model"
 	"github.com/slatt-oo/beijing-geo-map/backend/internal/service"
@@ -211,6 +212,28 @@ func TestClientCanceledRequestsAreNotLoggedAsErrors(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), `"level":"ERROR"`) {
 		t.Fatalf("a client cancellation must not be logged as an error:\n%s", logs)
+	}
+	if !strings.Contains(logs.String(), `"status":499`) {
+		t.Fatalf("the access log must record the cancellation as 499:\n%s", logs)
+	}
+}
+
+func TestRequestDeadlinesAreInternalErrors(t *testing.T) {
+	for _, serviceErr := range []error{context.DeadlineExceeded, context.Canceled} {
+		t.Run(serviceErr.Error(), func(t *testing.T) {
+			logs := captureLogs(t)
+			r := newTestRouter(&fakeDistrictService{}, &fakePOIService{err: serviceErr})
+			ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+			defer cancel()
+			rec := httptest.NewRecorder()
+
+			r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/pois/42", nil).WithContext(ctx))
+
+			assertErrorResponse(t, rec, http.StatusInternalServerError, CodeInternal, "服务器内部错误")
+			if !strings.Contains(logs.String(), `"level":"ERROR"`) {
+				t.Fatalf("a request that ran out of time must be logged as an error:\n%s", logs)
+			}
+		})
 	}
 }
 

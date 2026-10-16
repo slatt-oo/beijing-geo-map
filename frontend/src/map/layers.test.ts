@@ -1,6 +1,6 @@
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import { describe, expect, it } from 'vitest'
-import { addDataLayers, LAYER, SOURCE } from './layers'
+import { addDataLayers, BASEMAP_SOURCE, baseStyle, LAYER, SOURCE } from './layers'
 
 type Call = { kind: 'source'; id: string } | { kind: 'layer'; id: string; source: string }
 
@@ -43,5 +43,18 @@ describe('addDataLayers', () => {
       else expect(added.has(call.source), `${call.id} uses ${call.source}`).toBe(true)
     }
     expect([...added].sort()).toEqual(Object.values(SOURCE).sort())
+  })
+})
+
+describe('baseStyle', () => {
+  it('puts the tiles and the configured attribution on the basemap source', () => {
+    const style = baseStyle(['https://tiles.example.com/{z}/{x}/{y}.png'], '底图 © 示例')
+
+    expect(style.sources[BASEMAP_SOURCE]).toMatchObject({
+      type: 'raster',
+      tiles: ['https://tiles.example.com/{z}/{x}/{y}.png'],
+      attribution: '底图 © 示例',
+    })
+    expect(style.layers).toEqual([{ id: 'basemap', type: 'raster', source: BASEMAP_SOURCE }])
   })
 })

@@ -29,6 +29,14 @@ describe('useAppStore', () => {
     expect(state().notice).toBeNull()
   })
 
+  it('keeps the retry action of an error notice', () => {
+    const retry = () => {}
+    state().showError('后端服务未启动或暂时不可用', retry)
+
+    expect(state().notice).toEqual({ tone: 'error', message: '后端服务未启动或暂时不可用', retry })
+    expect(state().notice?.retry).toBe(retry)
+  })
+
   it('leaves pick mode once a location is set', () => {
     state().startPickLocation()
     expect(state().mode).toBe('pickLocation')

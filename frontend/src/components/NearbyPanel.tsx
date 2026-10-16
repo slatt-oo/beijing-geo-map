@@ -6,6 +6,7 @@ import { formatDistance } from '../lib/format'
 import { focusPoi } from '../map/focus'
 import { useMap } from '../map/MapView'
 import { NEARBY_RADII, useAppStore } from '../store/useAppStore'
+import { CategoryDot } from './CategoryDot'
 
 export function NearbyPanel() {
   const map = useMap()
@@ -16,7 +17,7 @@ export function NearbyPanel() {
   const { data: categories } = useCategories()
   const codes = useMemo(() => categories?.map((c) => c.code) ?? [], [categories])
   const requested = categoriesParam(codes, hidden)
-  const { data, isPending, isError } = useNearby(nearby, requested)
+  const { data, isPending, isError, isFetching, refetch } = useNearby(nearby, requested)
 
   if (!nearby) return null
   const colors = new Map(categories?.map((c) => [c.code, c.color]))
@@ -52,10 +53,10 @@ export function NearbyPanel() {
           </button>
         ))}
       </div>
-      <p className="mt-2 text-xs text-slate-500">
+      <p className="mt-2 flex items-center gap-2 text-xs text-slate-500">
         {requested === null
           ? '分类已全部关闭'
-          : isPending
+          : isPending || (isError && isFetching)
             ? '查询中…'
             : isError
               ? '查询失败'
@@ -64,6 +65,11 @@ export function NearbyPanel() {
                 : features.length === NEARBY_LIMIT
                   ? `仅显示最近的 ${NEARBY_LIMIT} 个`
                   : `共 ${features.length} 个`}
+        {requested !== null && isError && !isFetching && (
+          <button type="button" onClick={() => void refetch()} className="text-sky-700 underline underline-offset-2">
+            重试
+          </button>
+        )}
       </p>
       <ul className="mt-2 -mx-1 flex-1 overflow-y-auto">
         {features.map((f) => (
@@ -73,10 +79,7 @@ export function NearbyPanel() {
               onClick={() => focusPoi(map, f.properties.id, f.geometry.coordinates as LngLat)}
               className="flex w-full items-center gap-2 rounded px-1 py-1.5 text-left text-sm hover:bg-slate-100"
             >
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: colors.get(f.properties.category) ?? FALLBACK_POI_COLOR }}
-              />
+              <CategoryDot color={colors.get(f.properties.category) ?? FALLBACK_POI_COLOR} />
               <span className="flex-1 truncate text-slate-800">{f.properties.name}</span>
               <span className="shrink-0 tabular-nums text-slate-500">{formatDistance(f.properties.distance_m)}</span>
             </button>

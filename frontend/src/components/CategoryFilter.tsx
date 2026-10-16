@@ -1,5 +1,6 @@
 import { useCategories } from '../api/queries'
 import { useAppStore } from '../store/useAppStore'
+import { CategoryDot } from './CategoryDot'
 
 export function CategoryFilter() {
   const { data: categories } = useCategories()
@@ -20,7 +21,7 @@ export function CategoryFilter() {
               onChange={() => toggleCategory(c.code)}
               style={{ accentColor: c.color }}
             />
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+            <CategoryDot color={c.color} />
             <span className={visible ? 'text-slate-800' : 'text-slate-400'}>{c.name}</span>
           </label>
         )

@@ -1,7 +1,19 @@
 import { QueryClient, QueryObserver, skipToken } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BBox } from '../lib/bbox'
-import { districtQuery, locateQuery, NEARBY_LIMIT, nearbyQuery, POI_LIMIT, poiDetailQuery, poisQuery, SEARCH_LIMIT, searchQuery } from './queries'
+import {
+  districtQuery,
+  districtsQuery,
+  isPoiDetailQuery,
+  locateQuery,
+  NEARBY_LIMIT,
+  nearbyQuery,
+  POI_LIMIT,
+  poiDetailQuery,
+  poisQuery,
+  SEARCH_LIMIT,
+  searchQuery,
+} from './queries'
 
 const box: BBox = [116.3, 39.9, 116.4, 40]
 const emptyCollection = { type: 'FeatureCollection', features: [], truncated: false }
@@ -64,6 +76,12 @@ describe('detail queries', () => {
   it('skip the request without an id', () => {
     expect(poiDetailQuery(null).queryFn).toBe(skipToken)
     expect(districtQuery(null).queryFn).toBe(skipToken)
+  })
+
+  it('recognises the POI detail query key', () => {
+    expect(isPoiDetailQuery(poiDetailQuery(42).queryKey)).toBe(true)
+    expect(isPoiDetailQuery(districtsQuery().queryKey)).toBe(false)
+    expect(isPoiDetailQuery(poisQuery(box, undefined).queryKey)).toBe(false)
   })
 })
 

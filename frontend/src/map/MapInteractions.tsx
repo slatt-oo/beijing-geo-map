@@ -73,6 +73,11 @@ export function MapInteractions() {
         map.getCanvas().style.cursor = 'crosshair'
         return
       }
+      // 按着鼠标拖动地图时交给 MapLibre 显示抓手。
+      if (e.originalEvent.buttons !== 0) {
+        map.getCanvas().style.cursor = ''
+        return
+      }
       const layers = nearby ? POI_LAYERS : CLICKABLE_LAYERS
       const hit = map.queryRenderedFeatures(e.point, { layers }).length > 0
       map.getCanvas().style.cursor = hit ? 'pointer' : ''

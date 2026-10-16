@@ -13,10 +13,11 @@ export function PoiPopup() {
   const { data: poi, isError } = usePoiDetail(id)
   const [container] = useState(() => document.createElement('div'))
 
-  // 详情加载失败时清掉选中的 POI，否则再次点击同一个点不会重新请求。
+  // 详情加载失败时清掉选中的 POI，否则再次点击同一个点不会重新请求。已经显示的弹窗在后台刷新失败时保留。
+  const failed = isError && !poi
   useEffect(() => {
-    if (isError) useAppStore.getState().openPoi(null)
-  }, [isError])
+    if (failed) useAppStore.getState().openPoi(null)
+  }, [failed])
 
   useEffect(() => {
     if (!poi) return
